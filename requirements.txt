@@ -38,8 +38,6 @@ llvmlite==0.34.0
     # via numba
 matplotlib==3.3.3
     # via -r requirements.in
-nnaudio==0.2.0
-    # via -r requirements.in
 numba==0.51.2
     # via
     #   librosa

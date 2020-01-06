@@ -211,8 +211,6 @@ nbformat==5.0.8
     #   notebook
 nest-asyncio==1.4.3
     # via nbclient
-nnaudio==0.2.0
-    # via -r requirements.txt
 notebook==6.1.6
     # via
     #   jupyter
