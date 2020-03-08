@@ -1,2 +1,6 @@
+click
+pandas
 requests
 tensorflow
+typing-extensions
+tqdm

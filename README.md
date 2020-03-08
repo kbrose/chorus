@@ -7,7 +7,14 @@ Determine the bird from its call
     * https://www.macaulaylibrary.org
         * Tons of recordings, but requires signup/license agreement.
     * https://avocet.integrativebiology.natsci.msu.edu
+        * All recordings seem to be licensed under "Creative Commons Attribution-Noncommercial-Share Alike 3.0 United States License".
+        * Files available in `.wav` format.
     * https://www.xeno-canto.org
+        * Full rest API offered.
+        * Seems like most recordings are "only" MP3 files.
+        * Recordings typically (always?) licensed under with one of the CC licenses.
+
+After reviewing, it seems like xeno-canto is a clear winner in the short term. If the Macaulay Library is willing to share their data they might be a good follow up.
 
 ## Developing
 
