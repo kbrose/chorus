@@ -64,6 +64,39 @@ def save_all_xeno_canto_meta(progress=True):
             json.dump(recording_meta, f, indent=2)
 
 
+def save_all_xeno_canto_audio(progress=True, skip_existing=True):
+    """
+    Download the audio recordings from xeno-canto.
+
+    Assumes the meta data has already been downloaded.
+
+    Inputs
+    ------
+    progress : bool
+        Whether or not a progress bar should be displayed.
+    skip_existing : bool
+        If True and the audio file exists, do not re-download.
+    """
+    meta_folder = DATA_FOLDER / 'xeno-canto' / 'meta'
+    meta_files = list(meta_folder.glob('*.json'))
+    audio_folder = DATA_FOLDER / 'xeno-canto' / 'audio'
+    audio_folder.mkdir(parents=True, exist_ok=True)
+    audio_file_stems = [f.stem for f in audio_folder.glob('*')]
+    for meta_path in tqdm(meta_files, disable=not progress):
+        if meta_path.stem in audio_file_stems:
+            continue
+        with open(meta_path) as f:
+            meta = json.load(f)
+        try:
+            r = requests.get(f'https:{meta["file"]}')
+            filename = meta['id'] + '.' + meta['file-name'].split('.')[-1]
+            with open(audio_folder / filename, 'wb') as f:
+                f.write(r.content)
+        except Exception as e:
+            print(f'Problem downloading id {meta["id"]}: {e}')
+        time.sleep(SECONDS_BETWEEN_REQUESTS)
+
+
 def load_saved_xeno_canto_meta() -> pd.DataFrame:
     """
     Load the previously saved xeno-canto meta data.
