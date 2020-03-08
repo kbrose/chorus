@@ -1,0 +1,6 @@
+-r requirements.txt
+-r test-requirements.txt
+
+mypy
+flake8
+ipython
