@@ -4,3 +4,4 @@ requests
 tensorflow
 typing-extensions
 tqdm
+librosa

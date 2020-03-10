@@ -18,6 +18,8 @@ After reviewing, it seems like xeno-canto is a clear winner in the short term. I
 
 ## Developing
 
+### Python dependencies
+
 This code requires python 3.7.
 
 This project uses `pip-tools` to track requirements. It's recommended, but not required, to run the code.
@@ -35,3 +37,7 @@ pip-sync test-requirements.txt
 ```
 
 If you want to try and be looser with the package versions, you can just reference the corresponding `.in` file. But be aware that tests are only run on the specific package versions referenced in the `.txt` files.
+
+### ffmpeg
+
+You must install `ffmpeg` for the audio loading.
