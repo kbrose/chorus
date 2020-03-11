@@ -5,3 +5,4 @@ tensorflow
 typing-extensions
 tqdm
 librosa
+scikit-learn

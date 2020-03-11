@@ -1,11 +1,16 @@
 from pathlib import Path
 import time
-from typing import Iterable
+from typing import Iterable, Tuple
 import json
+import multiprocessing as mp
+import warnings
+from functools import partial
 
-import pandas as pd
 import requests
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
+import librosa
 
 from chorus._typing import XenoCantoRecording, XenoCantoResponse
 
@@ -14,6 +19,10 @@ SECONDS_BETWEEN_REQUESTS = 0.2
 XENO_CANTO_URL = (
     'https://www.xeno-canto.org/api/2/recordings'
     '?query=cnt:"United States"&page={page}'
+)
+
+warnings.filterwarnings(
+    'ignore', 'PySoundFile failed. Trying audioread instead.'
 )
 
 
@@ -117,3 +126,21 @@ def load_saved_xeno_canto_meta() -> pd.DataFrame:
     df['alt'] = df['alt'].astype(float, errors='ignore')
     df['scientific-name'] = df['gen'] + ' ' + df['sp']
     return df
+
+
+def _load_audio(file: Path, sample_rate: int) -> Tuple[Path, np.ndarray]:
+    return file, librosa.load(file, sr=sample_rate)[0]
+
+
+def convert_to_numpy(sample_rate: int, progress=True):
+    (DATA_FOLDER / 'xeno-canto' / 'numpy').mkdir(exist_ok=True, parents=True)
+    files = list((DATA_FOLDER / 'xeno-canto' / 'audio').glob('*'))
+    with mp.Pool(6) as pool:
+        for f, x in tqdm(
+            pool.imap_unordered(
+                partial(_load_audio, sample_rate=sample_rate), files
+            ),
+            total=len(files),
+            disable=not progress
+        ):
+            np.save(DATA_FOLDER / 'xeno-canto' / 'numpy' / f'{f.stem}.npy', x)
