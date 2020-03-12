@@ -29,9 +29,10 @@ def xeno_audio(verbose: bool, redownload: bool):
 
 @data.command('xc-to-npy', help='convert audio to .npy data at [SAMPLERATE]')
 @click.argument('samplerate', type=int)
+@click.option('--reprocess', is_flag=True, help='Reprocess all audio.')
 @click.option('-v', '--verbose', is_flag=True, help='Show progress bar.')
-def xeno_to_numpy(samplerate, verbose: bool):
-    c_data.convert_to_numpy(samplerate, verbose)
+def xeno_to_numpy(samplerate, reprocess: bool, verbose: bool):
+    c_data.convert_to_numpy(samplerate, verbose, not reprocess)
 
 
 @cli.command(help='train the model')
