@@ -1,6 +1,6 @@
 from pathlib import Path
 import time
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Optional
 import json
 import multiprocessing as mp
 import warnings
@@ -128,19 +128,50 @@ def load_saved_xeno_canto_meta() -> pd.DataFrame:
     return df
 
 
-def _load_audio(file: Path, sample_rate: int) -> Tuple[Path, np.ndarray]:
-    return file, librosa.load(file, sr=sample_rate)[0]
+def _load_audio(file: Path, sr: int) -> Tuple[Path, Optional[np.ndarray]]:
+    """
+    Load the audio file. Used for multiprocessing.Pool() applications.
+    """
+    try:
+        return file, librosa.load(file, sr=sr)[0]
+    except Exception as e:
+        print(f'Exception with file {file}: {e}', flush=True)
+        return file, None
 
 
-def convert_to_numpy(sample_rate: int, progress=True):
-    (DATA_FOLDER / 'xeno-canto' / 'numpy').mkdir(exist_ok=True, parents=True)
-    files = list((DATA_FOLDER / 'xeno-canto' / 'audio').glob('*'))
-    with mp.Pool(6) as pool:
+def convert_to_numpy(sample_rate: int, progress=True, skip_existing=True):
+    """
+    Convert the audio files to numpy files (np.save()).
+
+    These files are loaded much faster (approximately 800 times faster).
+    Unfortunately they are larger than MP3 files by a factor of ~6.
+
+    Inputs
+    ------
+    sample_rate : int
+        Target sampling rate of the audio.
+    progress : bool
+        Print a progress bar?
+    skip_existing : bool
+        If True, skip the saving of audio files which already have a
+        corresponding file in the `numpy/` folder.
+    """
+    xc_folder = DATA_FOLDER / 'xeno-canto'
+    (xc_folder / 'numpy').mkdir(exist_ok=True, parents=True)
+    files = list((xc_folder / 'audio').glob('*'))
+    total = len(files)
+    initial = 0
+    if skip_existing:
+        done = set(f.stem for f in (xc_folder / 'numpy').glob('*'))
+        files = [f for f in files if f.stem not in done]
+        initial = len(done)
+    with mp.Pool() as pool:
         for f, x in tqdm(
-            pool.imap_unordered(
-                partial(_load_audio, sample_rate=sample_rate), files
-            ),
-            total=len(files),
+            pool.imap_unordered(partial(_load_audio, sr=sample_rate), files),
+            total=total,
+            initial=initial,
+            smoothing=0.025,
             disable=not progress
         ):
-            np.save(DATA_FOLDER / 'xeno-canto' / 'numpy' / f'{f.stem}.npy', x)
+            if x is not None:
+                np.save(xc_folder / 'numpy' / f'{f.stem}.npy', x)
