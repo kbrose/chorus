@@ -41,3 +41,19 @@ If you want to try and be looser with the package versions, you can just referen
 ### ffmpeg
 
 You must install `ffmpeg` for the audio loading.
+
+### Getting the data
+
+Use the command line interface. ***You'll need about 400 GB of free space and 48 hours.***
+
+```bash
+# First get the meta data (about 200MB)
+python cli.py data xc-meta --help
+
+# Next download the audio (about 60GB, ~24 hours)
+python cli.py data xc-audio --help
+
+# Finally, convert audio to numpy format (about 320GB, ~24 hours)
+# This format takes up more space, but loads 800 times faster.
+python cli.py data xc-to-npy --help
+```
