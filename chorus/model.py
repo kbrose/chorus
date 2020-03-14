@@ -90,13 +90,48 @@ def make_model() -> keras.models.Model:
 
     x = keras.layers.Dropout(rate=0.25)(x)
 
-    for unit in [16]:
-        x = keras.layers.Conv1D(unit, 3, strides=2)(x)
+    prev_unit = 257
+    for unit in [128, 64, 32, 32, 64]:
+        x_original = x
+
+        x = keras.layers.Conv1D(unit, 1, strides=1, padding='valid')(x)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.Activation('relu')(x)
+
+        x = keras.layers.Conv1D(unit, 3, strides=1, padding='same')(x)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.Activation('relu')(x)
+
+        x = keras.layers.Conv1D(prev_unit, 1, strides=1, padding='valid')(x)
+        x = keras.layers.BatchNormalization()(x)
+
+        x = keras.layers.Add()([x, x_original])
+        x = keras.layers.Activation('relu')(x)
+        x_original = x
+
+        x = keras.layers.Conv1D(unit, 1, strides=2, padding='valid')(x)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.Activation('relu')(x)
+
+        x = keras.layers.Conv1D(unit, 3, strides=1, padding='same')(x)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.Activation('relu')(x)
+
+        x = keras.layers.Conv1D(unit, 1, strides=1, padding='valid')(x)
+        x = keras.layers.BatchNormalization()(x)
+
+        x_original = keras.layers.Conv1D(unit, 1, strides=2, padding='valid')(x_original)
+        x_original = keras.layers.BatchNormalization()(x_original)
+
+        x = keras.layers.Add()([x, x_original])
+        x = keras.layers.Activation('relu')(x)
+        x = keras.layers.Dropout(rate=0.25)(x)
+        prev_unit = unit
 
     # Average the features over the time series.
     x = keras.layers.GlobalAveragePooling1D()(x)
 
-    for unit in [16]:
+    for unit in [64, 32]:
         x = keras.layers.Dense(unit, activation='relu')(x)
 
     probs = keras.layers.Dense(len(TARGETS), activation='sigmoid')(x)
