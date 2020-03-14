@@ -7,9 +7,9 @@ from tensorflow import keras
 TARGETS = [
     "Song Sparrow",
     "Carolina Wren",
-    # "Northern Cardinal",
-    # "American Robin",
-    # "Red Crossbill",
+    "Northern Cardinal",
+    "American Robin",
+    "Red Crossbill",
     # "Red-winged Blackbird",
     # "House Wren",
     # "Bewick's Wren",
@@ -26,20 +26,6 @@ TARGETS = [
     # "Common Yellowthroat",
     # "Northern Raven",
 ]
-
-
-def _is_positive_power_of_2(x: int) -> bool:
-    """
-    True if x is a positive power of 2, False otherwise.
-
-    Runtime scales logarithmically with x.
-    """
-    checker = 1
-    while checker < x:
-        checker *= 2
-    if checker == x:
-        return True
-    return False
 
 
 class Spectrogram(keras.layers.Layer):
@@ -60,11 +46,6 @@ class Spectrogram(keras.layers.Layer):
         """
         super(Spectrogram, self).__init__(**kwargs)
 
-        if not _is_positive_power_of_2(frame_length):
-            # Not strictly necessary, but it's fine in my use case
-            # and makes downstream calculations easier/faster.
-            raise ValueError(f'{frame_length} must be a postiive power of 2')
-
         self.frame_length = frame_length
         self.frame_step = frame_step
         self.input_spec = keras.layers.InputSpec(ndim=2)
@@ -79,6 +60,46 @@ class Spectrogram(keras.layers.Layer):
         }
 
 
+def _resnet_blocks(x, n_feats_1, n_feats_2, num_id):
+    x0 = x
+
+    x = keras.layers.Conv1D(n_feats_1, 1, strides=2, padding='valid')(x)
+    x = keras.layers.BatchNormalization()(x)
+    x = keras.layers.ReLU()(x)
+
+    x = keras.layers.Conv1D(n_feats_1, 3, strides=1, padding='same')(x)
+    x = keras.layers.BatchNormalization()(x)
+    x = keras.layers.ReLU()(x)
+
+    x = keras.layers.Conv1D(n_feats_2, 1, strides=1, padding='valid')(x)
+    x = keras.layers.BatchNormalization()(x)
+
+    x0 = keras.layers.Conv1D(n_feats_2, 1, strides=2, padding='valid')(x0)
+    x0 = keras.layers.BatchNormalization()(x0)
+
+    x = keras.layers.Add()([x, x0])
+    x = keras.layers.ReLU()(x)
+
+    for _ in range(num_id):
+        x0 = x
+
+        x = keras.layers.Conv1D(n_feats_1, 1, strides=1, padding='valid')(x)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.ReLU()(x)
+
+        x = keras.layers.Conv1D(n_feats_1, 3, strides=1, padding='same')(x)
+        x = keras.layers.BatchNormalization()(x)
+        x = keras.layers.ReLU()(x)
+
+        x = keras.layers.Conv1D(n_feats_2, 1, strides=1, padding='valid')(x)
+        x = keras.layers.BatchNormalization()(x)
+
+        x = keras.layers.Add()([x, x0])
+        x = keras.layers.ReLU()(x)
+
+    return x
+
+
 def make_model() -> keras.models.Model:
     """
     Create the bird song model.
@@ -90,48 +111,19 @@ def make_model() -> keras.models.Model:
 
     x = keras.layers.Dropout(rate=0.25)(x)
 
-    prev_unit = 257
-    for unit in [128, 64, 32, 32, 64]:
-        x_original = x
+    x = keras.layers.Conv1D(128, 7, strides=2)(x)
+    x = keras.layers.BatchNormalization()(x)
+    x = keras.layers.ReLU()(x)
+    x = keras.layers.MaxPooling1D(3, strides=2)(x)
 
-        x = keras.layers.Conv1D(unit, 1, strides=1, padding='valid')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.layers.Activation('relu')(x)
-
-        x = keras.layers.Conv1D(unit, 3, strides=1, padding='same')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.layers.Activation('relu')(x)
-
-        x = keras.layers.Conv1D(prev_unit, 1, strides=1, padding='valid')(x)
-        x = keras.layers.BatchNormalization()(x)
-
-        x = keras.layers.Add()([x, x_original])
-        x = keras.layers.Activation('relu')(x)
-        x_original = x
-
-        x = keras.layers.Conv1D(unit, 1, strides=2, padding='valid')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.layers.Activation('relu')(x)
-
-        x = keras.layers.Conv1D(unit, 3, strides=1, padding='same')(x)
-        x = keras.layers.BatchNormalization()(x)
-        x = keras.layers.Activation('relu')(x)
-
-        x = keras.layers.Conv1D(unit, 1, strides=1, padding='valid')(x)
-        x = keras.layers.BatchNormalization()(x)
-
-        x_original = keras.layers.Conv1D(unit, 1, strides=2, padding='valid')(x_original)
-        x_original = keras.layers.BatchNormalization()(x_original)
-
-        x = keras.layers.Add()([x, x_original])
-        x = keras.layers.Activation('relu')(x)
+    for n_feats_1, n_feats_2 in [(32, 64), (64, 128), (64, 256), (64, 512)]:
         x = keras.layers.Dropout(rate=0.25)(x)
-        prev_unit = unit
+        x = _resnet_blocks(x, n_feats_1, n_feats_2, 3)
 
     # Average the features over the time series.
     x = keras.layers.GlobalAveragePooling1D()(x)
 
-    for unit in [64, 32]:
+    for unit in [256, 128]:
         x = keras.layers.Dense(unit, activation='relu')(x)
 
     probs = keras.layers.Dense(len(TARGETS), activation='sigmoid')(x)
