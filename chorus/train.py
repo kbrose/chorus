@@ -1,6 +1,7 @@
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 from pathlib import Path
 import math
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -18,9 +19,12 @@ LOGS_FOLDER = Path(__file__).parents[1] / 'logs'
 SAVED_MODELS = Path(__file__).parents[1] / 'models'
 
 BATCH = 32
-SAMPLE_LEN_SECONDS = 30
+SAMPLE_LEN_SECONDS = 20
 SAMPLE_RATE = 30_000
 TRAIN_SAMPLES = SAMPLE_RATE * SAMPLE_LEN_SECONDS
+
+# sklearn.preprocessing.MultiLabelBinarizer is very loud.
+warnings.filterwarnings('ignore', 'unknown class')
 
 
 class Data(NamedTuple):
@@ -30,21 +34,51 @@ class Data(NamedTuple):
     test_len: int
 
 
-def _make_dataset(df: pd.DataFrame, is_training: bool) -> tf.data.Dataset:
+class ReduceLRBacktrack(tf.keras.callbacks.ReduceLROnPlateau):
+    def __init__(self, model_filepath, *args, **kwargs):
+        super(ReduceLRBacktrack, self).__init__(*args, **kwargs)
+        self.model_filepath = model_filepath
+        self.best_epoch = 0
+
+    def on_epoch_end(self, epoch, logs=None):
+        current = logs.get(self.monitor)
+        if current is None:
+            tf.get_logger().warning(
+                f'ReduceLROnPlateau conditioned on metric `{self.monitor}`'
+                ' which is not available. Available metrics are:'
+                f' {",".join(list(logs.keys()))}'
+            )
+        if self.monitor_op(current, self.best):
+            self.best_epoch = epoch + 1
+        elif not self.in_cooldown() and self.wait + 1 >= self.patience:
+            # load best model so far
+            print(f"\nBacktracking to epoch {self.best_epoch}")
+            self.model.load_weights(
+                self.model_filepath.format(epoch=self.best_epoch)
+            )
+
+        super().on_epoch_end(epoch, logs)  # actually reduce LR
+
+
+def _make_dataset(
+    df: pd.DataFrame, aug_df: Optional[pd.DataFrame]
+) -> tf.data.Dataset:
     rng = np.random.RandomState(seed=20200313)
     sci2en = scientific_to_en(df)
+
     mlb = sklearn.preprocessing.MultiLabelBinarizer(TARGETS)
-    mlb.fit([])
-    labels = [
-        [row['en']] + list(map(sci2en.get, filter(len, row['also'])))
-        for _, row in df.iterrows()
-    ]
+    mlb.fit([])  # not needed, we passed in TARGETS as the classes
+
+    def row_to_labels(row):
+        return [row['en']] + list(map(sci2en.get, filter(len, row['also'])))
+
+    labels = [row_to_labels(row) for _, row in df.iterrows()]
     y = mlb.transform(labels).astype(int)
     print(f'mean value of labels: {y.mean()}')
 
     def load(xc_id: int) -> np.ndarray:
         x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy')
-        if is_training:
+        if aug_df is not None:
             if x.size < TRAIN_SAMPLES:
                 # repeat signal to have length >= TRAIN_SAMPLES
                 x = np.tile(x, math.ceil(TRAIN_SAMPLES / x.size))
@@ -56,7 +90,28 @@ def _make_dataset(df: pd.DataFrame, is_training: bool) -> tf.data.Dataset:
 
     def data_generator():
         while True:
-            yield from zip(map(load, df['id']), y)
+            if aug_df is None:
+                yield from zip(map(load, df['id']), y)
+            else:
+                idx = rng.permutation(y.shape[0])
+                for audio, label in zip(map(load, df['id'].iloc[idx]), y[idx]):
+                    if rng.random() < 1 / 8:
+                        aug_row = aug_df.sample(n=1).iloc[0]
+                        label = np.logical_or(
+                            label,
+                            mlb.transform([row_to_labels(aug_row)]).flatten()
+                        ).astype(int)
+                        # We'll add in the audio, making sure the original
+                        # audio is not less than 1/3rd the strength of the new
+                        smoothing = rng.random() + 0.5
+                        audio *= smoothing
+                        audio += load(aug_row['id']) * (1.5 - smoothing)
+                    if rng.random() < 1 / 16:
+                        audio += rng.normal(
+                            scale=audio.std() * rng.random() * 0.75,
+                            size=audio.size,
+                        )
+                    yield audio, label
 
     return tf.data.Dataset.from_generator(
         data_generator, (tf.float32, tf.int16), ((None,), (len(TARGETS),))
@@ -65,7 +120,8 @@ def _make_dataset(df: pd.DataFrame, is_training: bool) -> tf.data.Dataset:
 
 def get_model_data() -> Data:
     df = load_saved_xeno_canto_meta()
-    observed_ids = [f.stem for f in (_XC_DATA_FOLDER / 'audio').glob('*')]
+    observed_ids = [f.stem for f in (_XC_DATA_FOLDER / 'numpy').glob('*')]
+    aug_df = df.loc[df['id'].isin(observed_ids)].copy()
     # Filter out poor quality recordings, and recordings with multiple species
     df = df.loc[
         df['q'].isin(['A', 'B', 'C'])
@@ -78,9 +134,9 @@ def get_model_data() -> Data:
     )
 
     return Data(
-        train=_make_dataset(train_df, True),
+        train=_make_dataset(train_df, aug_df),
         train_len=train_df.shape[0],
-        test=_make_dataset(test_df, False),
+        test=_make_dataset(test_df, None),
         test_len=test_df.shape[0],
     )
 
@@ -91,16 +147,18 @@ def train(name: str):
     model.summary()
 
     train, train_len, test, test_len = get_model_data()
-    train = train.repeat().shuffle(200).batch(BATCH)
-    test = test.repeat().batch(1)
+    train = train.repeat().batch(BATCH).prefetch(50)
+    test = test.repeat().batch(1).prefetch(50)
 
     tb = tf.keras.callbacks.TensorBoard(
         str(LOGS_FOLDER / name), histogram_freq=5
     )
+    checkpoint_name = str(SAVED_MODELS / name / 'weights-{epoch:04d}.hdf5')
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
-        str(SAVED_MODELS / name / 'weights-{epoch:04d}.hdf5'),
+        checkpoint_name,
         save_best_only=True,
     )
+    lr_reducer = ReduceLRBacktrack(checkpoint_name, factor=0.5, patience=5)
 
     # Create model/logs folders
     (SAVED_MODELS / name).mkdir(parents=True, exist_ok=True)
@@ -112,11 +170,13 @@ def train(name: str):
             raise ValueError('newline not allowed in target names')
         f.write('\n'.join(TARGETS))
 
+    tf.profiler.experimental.server.start(6009)
+
     model.fit(
         train,
-        callbacks=[tb, checkpoint],
+        callbacks=[tb, checkpoint, lr_reducer],
         validation_data=test,
         steps_per_epoch=math.ceil(train_len // BATCH),
         validation_steps=test_len,
-        epochs=100
+        epochs=500
     )
