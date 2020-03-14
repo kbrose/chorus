@@ -1,6 +1,7 @@
+from collections import defaultdict
 from pathlib import Path
 import time
-from typing import Iterable, Tuple, Optional
+from typing import Dict, Iterable, Tuple, Optional
 import json
 import multiprocessing as mp
 import warnings
@@ -124,8 +125,36 @@ def load_saved_xeno_canto_meta() -> pd.DataFrame:
     df['lat'] = df['lat'].astype(float, errors='ignore')
     df['lng'] = df['lng'].astype(float, errors='ignore')
     df['alt'] = df['alt'].astype(float, errors='ignore')
+    df['length-seconds'] = pd.to_timedelta(df['length'].apply(
+        lambda x: '0:' + x if x.count(':') == 1 else x  # put in hour if needed
+    )).dt.seconds
     df['scientific-name'] = df['gen'] + ' ' + df['sp']
     return df
+
+
+def scientific_to_en(df: pd.DataFrame) -> Dict[str, str]:
+    """
+    Create mapping of scientific name to english name.
+
+    If the mapping is not known, defaults to the string 'unknown'
+
+    Inputs
+    ------
+    df : pd.DataFrame
+        Must have columns 'scientific-name' and 'en'.
+        Typically, this will be the output of `load_saved_xeno_canto_meta`.
+
+    Returns
+    -------
+    mapping : Dict[str, str]
+        Maps scientific names to english names.
+    """
+    mapping = (
+        df.drop_duplicates(subset=['scientific-name'])
+        .set_index('scientific-name')['en']
+        .to_dict()
+    )
+    return defaultdict(lambda: 'unknown', mapping)
 
 
 def _load_audio(file: Path, sr: int) -> Tuple[Path, Optional[np.ndarray]]:
