@@ -40,6 +40,7 @@ def _make_dataset(df: pd.DataFrame, is_training: bool) -> tf.data.Dataset:
         for _, row in df.iterrows()
     ]
     y = mlb.transform(labels).astype(int)
+    print(f'mean value of labels: {y.mean()}')
 
     def load(xc_id: int) -> np.ndarray:
         x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy')
