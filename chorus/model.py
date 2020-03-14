@@ -46,7 +46,7 @@ class Spectrogram(keras.layers.Layer):
     """
     Compute the power spectral density spectrogram.
     """
-    def __init__(self, frame_length: int, frame_step: int):
+    def __init__(self, frame_length: int, frame_step: int, **kwargs):
         """
         Inputs
         ------
@@ -55,8 +55,10 @@ class Spectrogram(keras.layers.Layer):
             Must be a positive power of 2.
         frame_step : int
             Step size between windows. Positive integer.
+        **kwargs
+            Passed to super().__init__()
         """
-        super(Spectrogram, self).__init__()
+        super(Spectrogram, self).__init__(**kwargs)
 
         if not _is_positive_power_of_2(frame_length):
             # Not strictly necessary, but it's fine in my use case
@@ -83,17 +85,18 @@ def make_model() -> keras.models.Model:
     """
     audio = keras.layers.Input(shape=(None,), name='audio')
 
+    # The shape of x will be (None, 257) with these parameters
     x = Spectrogram(512, 448)(audio)  # 448 = 512 - 512 // 8
 
-    for unit in [8]:
-        x = keras.layers.Bidirectional(
-            keras.layers.GRU(unit, return_sequences=True, activation='relu')
-        )(x)
+    x = keras.layers.Dropout(rate=0.25)(x)
+
+    for unit in [16]:
+        x = keras.layers.Conv1D(unit, 3, strides=2)(x)
 
     # Average the features over the time series.
     x = keras.layers.GlobalAveragePooling1D()(x)
 
-    for unit in [8]:
+    for unit in [16]:
         x = keras.layers.Dense(unit, activation='relu')(x)
 
     probs = keras.layers.Dense(len(TARGETS), activation='sigmoid')(x)
