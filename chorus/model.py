@@ -1,3 +1,5 @@
+from typing import Dict, Any
+
 import tensorflow as tf
 from tensorflow import keras
 
@@ -69,6 +71,11 @@ class Spectrogram(keras.layers.Layer):
         y = tf.signal.stft(x, self.frame_length, self.frame_step, pad_end=True)
         return tf.abs(tf.math.conj(y) * y)
 
+    def get_config(self) -> Dict[str, Any]:
+        return {
+            'frame_length': self.frame_length, 'frame_step': self.frame_step
+        }
+
 
 def make_model() -> keras.models.Model:
     """
@@ -78,7 +85,7 @@ def make_model() -> keras.models.Model:
 
     x = Spectrogram(512, 448)(audio)  # 448 = 512 - 512 // 8
 
-    for unit in [64, 32, 16, 8]:
+    for unit in [8]:
         x = keras.layers.Bidirectional(
             keras.layers.GRU(unit, return_sequences=True, activation='relu')
         )(x)
@@ -86,7 +93,7 @@ def make_model() -> keras.models.Model:
     # Average the features over the time series.
     x = keras.layers.GlobalAveragePooling1D()(x)
 
-    for unit in [8, 16, 32]:
+    for unit in [8]:
         x = keras.layers.Dense(unit, activation='relu')(x)
 
     probs = keras.layers.Dense(len(TARGETS), activation='sigmoid')(x)

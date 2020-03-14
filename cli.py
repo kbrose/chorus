@@ -36,8 +36,9 @@ def xeno_to_numpy(samplerate, reprocess: bool, verbose: bool):
 
 
 @cli.command(help='train the model')
-def train():
-    c_train.train()
+@click.argument('name', type=str)
+def train(name: str):
+    c_train.train(name)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,6 @@ import pandas as pd
 import tensorflow as tf
 import sklearn.model_selection
 import sklearn.preprocessing
-import librosa
 from tqdm import tqdm
 
 from chorus.data import DATA_FOLDER, load_saved_xeno_canto_meta
@@ -17,26 +16,26 @@ LOGS_FOLDER = Path(__file__).parents[1] / 'logs'
 SAVED_MODELS = Path(__file__).parents[1] / 'models'
 
 
-
 class Data(NamedTuple):
     train: tf.data.Dataset
     test: tf.data.Dataset
 
 
-def _load_audio_file(xc_id: int) -> np.ndarray:
-    xc_file = next((_XC_DATA_FOLDER / 'audio').glob(f'{xc_id}*'))
-    return librosa.load(xc_file, sr=30000, duration=10.0)[0]
-
-
 def _make_dataset(df: pd.DataFrame, kind: str) -> tf.data.Dataset:
-    x = tf.data.Dataset.from_tensor_slices([
-        _load_audio_file(xc_id) for xc_id in tqdm(df['id'])
-    ])
 
-    ohe = sklearn.preprocessing.OneHotEncoder(TARGETS)
-    y = tf.data.Dataset.from_tensor_slices(ohe.transform(df['en']))
+    def data_generator():
+        x = [
+            np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy')[:30_000 * 15]
+            for xc_id in tqdm(df['id'].iloc[:100])
+        ]
 
-    return tf.data.Dataset.zip((x, y))
+        ohe = sklearn.preprocessing.OneHotEncoder([TARGETS])
+        y = ohe.fit_transform(df['en'].values.reshape(-1, 1)).toarray().astype(int)
+        yield from zip(x, y)
+
+    return tf.data.Dataset.from_generator(
+        data_generator, (tf.float32, tf.int16), ((None,), (len(TARGETS),))
+    )
 
 
 def get_model_data() -> Data:
@@ -59,15 +58,16 @@ def get_model_data() -> Data:
     )
 
 
-def train():
+def train(name: str):
     model = make_model()
     model.compile('adam', 'binary_crossentropy')
+    model.summary()
 
     train, test = get_model_data()
     train = train.repeat().shuffle(200).batch(1)
 
-    tb = tf.keras.callbacks.Tensorboard(str(LOGS_FOLDER))
-    checkpoint = tf.keras.callbacks.ModelCheckpoint(str(SAVED_MODELS))
+    tb = tf.keras.callbacks.TensorBoard(str(LOGS_FOLDER / name))
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(str(SAVED_MODELS / name))
 
     model.fit(
         train,
