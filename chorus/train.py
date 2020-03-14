@@ -1,5 +1,6 @@
 from typing import NamedTuple
 from pathlib import Path
+import math
 
 import numpy as np
 import pandas as pd
@@ -16,6 +17,11 @@ _XC_DATA_FOLDER = DATA_FOLDER / 'xeno-canto'
 LOGS_FOLDER = Path(__file__).parents[1] / 'logs'
 SAVED_MODELS = Path(__file__).parents[1] / 'models'
 
+BATCH = 32
+SAMPLE_LEN_SECONDS = 30
+SAMPLE_RATE = 30_000
+TRAIN_SAMPLES = SAMPLE_RATE * SAMPLE_LEN_SECONDS
+
 
 class Data(NamedTuple):
     train: tf.data.Dataset
@@ -24,18 +30,27 @@ class Data(NamedTuple):
     test_len: int
 
 
-def _make_dataset(df: pd.DataFrame) -> tf.data.Dataset:
+def _make_dataset(df: pd.DataFrame, is_training: bool) -> tf.data.Dataset:
+    rng = np.random.RandomState(seed=20200313)
     sci2en = scientific_to_en(df)
     mlb = sklearn.preprocessing.MultiLabelBinarizer(TARGETS)
     mlb.fit([])
     labels = [
-        [row['en']] + [sci2en[bird] for bird in filter(len, row['also'])]
+        [row['en']] + list(map(sci2en.get, filter(len, row['also'])))
         for _, row in df.iterrows()
     ]
     y = mlb.transform(labels).astype(int)
 
     def load(xc_id: int) -> np.ndarray:
-        x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy')[:30_000 * 60]
+        x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy')
+        if is_training:
+            if x.size < TRAIN_SAMPLES:
+                # repeat signal to have length >= TRAIN_SAMPLES
+                x = np.tile(x, math.ceil(TRAIN_SAMPLES / x.size))
+            start = rng.randint(0, max(x.size - TRAIN_SAMPLES, 1))
+            x = x[start:start + TRAIN_SAMPLES]
+        else:
+            x = x[:SAMPLE_RATE * 360]  # limit to 3 minutes
         return x
 
     def data_generator():
@@ -62,9 +77,9 @@ def get_model_data() -> Data:
     )
 
     return Data(
-        train=_make_dataset(train_df),
+        train=_make_dataset(train_df, True),
         train_len=train_df.shape[0],
-        test=_make_dataset(test_df),
+        test=_make_dataset(test_df, False),
         test_len=test_df.shape[0],
     )
 
@@ -75,11 +90,11 @@ def train(name: str):
     model.summary()
 
     train, train_len, test, test_len = get_model_data()
-    train = train.repeat().shuffle(200).batch(1)
+    train = train.repeat().shuffle(200).batch(BATCH)
     test = test.repeat().batch(1)
 
     tb = tf.keras.callbacks.TensorBoard(
-        str(LOGS_FOLDER / name), histogram_freq=5, write_images=True,
+        str(LOGS_FOLDER / name), histogram_freq=5
     )
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
         str(SAVED_MODELS / name / 'weights-{epoch:04d}.hdf5'),
@@ -100,7 +115,7 @@ def train(name: str):
         train,
         callbacks=[tb, checkpoint],
         validation_data=test,
-        steps_per_epoch=train_len,
+        steps_per_epoch=math.ceil(train_len // BATCH),
         validation_steps=test_len,
         epochs=100
     )
