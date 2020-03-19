@@ -18,7 +18,8 @@ if (navigator.mediaDevices) {
                     .slice(event.inputBuffer.length)
                     .concat(Array.from(event.inputBuffer.getChannelData(0)));
 
-                // Call model on audioBuffer
+                // 1. Resample to desired sample rate (30,000 Hz)
+                // 2. Call model on audioBuffer
                 functionOutput.innerHTML = audioBuffer[0];
             };
 
