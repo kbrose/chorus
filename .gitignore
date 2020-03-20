@@ -133,3 +133,4 @@ data
 .vscode
 logs
 models
+.DS_Store
