@@ -7,13 +7,16 @@ async function loadModel() {
 }
 
 function interpolate(y, inFs, outFs) {
-  yNew = new Array(Math.floor((y.length * inFs) / outFs));
+  if (y.length < 2) {
+    throw "y must have length >= 2";
+  }
+  yNew = new Array(Math.ceil(((y.length - 1) * inFs) / outFs) + 1);
   x = 0;
   x0 = 0;
   x1 = inFs;
   oldIndex = 0;
   for (i = 0; i < yNew.length; i++) {
-    if (x1 < i * outFs) {
+    while (x1 < i * outFs) {
       x0 = x1;
       x1 += inFs;
       oldIndex++;
