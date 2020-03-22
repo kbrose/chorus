@@ -1,6 +1,14 @@
-const functionOutput = document.querySelector(".function-output");
+const functionOutput = document.getElementById("function-output");
+const canvasCtx = document.getElementById("spectrogram").getContext("2d");
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 const modelSampleRate = 30000;
+const myImageData = canvasCtx.createImageData(669, 257);
+for (var i = 0; i < myImageData.data.length; i += 4) {
+  myImageData.data[i + 0] = 0;
+  myImageData.data[i + 1] = 0;
+  myImageData.data[i + 2] = 0;
+  myImageData.data[i + 3] = 255;
+}
 
 async function loadModel() {
   return await tf.loadLayersModel("/models/model.json");
@@ -82,17 +90,40 @@ if (navigator.mediaDevices) {
 
       // Spectrogram must be registered before calling loadModel().
       loadModel().then(function(model) {
-        var audioBuffer = new Array(audioCtx.sampleRate * 20).fill(0);
+        // Modify topology so we can get the spectrogram output
+        const modelWithSpectrogram = tf.model({
+          inputs: model.input,
+          outputs: [
+            model.output,
+            model.getLayer("spectrogram_Spectrogram1").output
+          ]
+        });
+        var audioBuffer = new Array(audioCtx.sampleRate * 10).fill(0);
 
         scriptNode = audioCtx.createScriptProcessor(16384, 1, 1);
         scriptNode.onaudioprocess = function(event) {
           audioBuffer = audioBuffer
-            .slice(resampled.length)
+            .slice(event.inputBuffer.getChannelData(0).length)
             .concat(Array.from(event.inputBuffer.getChannelData(0)));
 
-          functionOutput.innerHTML = model.predict(
+          modelOut = modelWithSpectrogram.predict(
             tf.tensor(audioBuffer, [1, audioBuffer.length])
           );
+          probs = modelOut[0].arraySync()[0];
+          ffts = modelOut[1];
+          ffts = ffts
+            .transpose([0, 2, 1])
+            .flatten()
+            .div(tf.add(ffts.max(), 0.000001))
+            .mul(255)
+            .asType("int32")
+            .arraySync();
+          for (var i = 3; i < myImageData.data.length; i += 4) {
+            myImageData.data[i] = ffts[Math.floor(i / 4)];
+          }
+          canvasCtx.putImageData(myImageData, 0, 0);
+          console.log(probs);
+          functionOutput.innerText = probs;
         };
 
         source.connect(scriptNode);
