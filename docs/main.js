@@ -10,7 +10,7 @@ for (var i = 0; i < myImageData.data.length; i += 4) {
   myImageData.data[i + 3] = 255;
 }
 
-const worker = new Worker("chorus/ml.js");
+const worker = new Worker("/chorus/ml.js");
 
 const runButton = document.getElementById("controller");
 runButton.addEventListener("click", main);
