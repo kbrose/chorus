@@ -6,7 +6,7 @@ const modelSampleRate = 30000;
 const audioCtxSampleRate = 44100; // TODO: remove this hard coding
 
 async function loadModel() {
-  return await tf.loadLayersModel("/models/model.json");
+  return await tf.loadLayersModel("/chorus/models/model.json");
 }
 
 class Spectrogram extends tf.layers.Layer {
