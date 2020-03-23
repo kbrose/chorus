@@ -16,6 +16,10 @@ const runButton = document.getElementById("controller");
 runButton.addEventListener("click", main);
 
 let audioCtx = undefined;
+let targets;
+fetch("/chorus/models/targets.json")
+  .then(response => response.json())
+  .then(json => (targets = json));
 
 function main(_e) {
   if (audioCtx === undefined) {
@@ -63,8 +67,12 @@ function startup() {
             myImageData.data[i] = ffts[Math.floor(i / 4)];
           }
           canvasCtx.putImageData(myImageData, 0, 0);
-          functionOutput.innerText = probs;
-          console.log(new Date());
+          txt = "";
+          for (i = 0; i < targets.length; i++) {
+            txt +=
+              "<li>" + targets[i] + ": " + Math.round(probs[i] * 100) + "</li>";
+          }
+          functionOutput.innerHTML = txt;
         };
       })
       .catch(function(err) {
