@@ -14,6 +14,15 @@ class Spectrogram extends tf.layers.Layer {
     super(config || {});
     this.frameLength = config["frameLength"];
     this.frameStep = config["frameStep"];
+
+    // Those are the theoretical levels, but we need to adjust for
+    // variable sampling rates.
+    this.actualFrameLength = Math.ceil(
+      (this.frameLength * audioCtxSampleRate) / modelSampleRate
+    );
+    this.actualFrameStep = Math.ceil(
+      (this.frameStep * audioCtxSampleRate) / modelSampleRate
+    );
   }
 
   computeOutputShape(_inputShape) {
@@ -32,39 +41,11 @@ class Spectrogram extends tf.layers.Layer {
     }
     y = y.flatten();
 
-    // Resample.
-    // This is not part of the python implementation of Spectrogram.
-    // Compute the 1 / new sample rate, as if the original sampling
-    // rate were exactly 1. This makes some stuff easier.
-    const relativeFs = modelSampleRate / audioCtxSampleRate;
-    // Hack our own linspace(), the built-in version is woefully broken
-    const xResampled = tf
-      .range(0, [Math.ceil(y.size * relativeFs)])
-      .mul(1 / relativeFs);
-    // Assuming the original sampling rate is 1 means that the
-    // relevant bounding indexes are to the left/right of the
-    // truncated form of the new x sample locations.
-    const yLeftIndexes = xResampled
-      .asType("int32")
-      .clipByValue(0, y.shape[0] - 1)
-      .asType("int32");
-    const yRightIndexes = tf.add(yLeftIndexes, tf.scalar(1, "int32"));
-    // The mixture (alpha) value is also 1 - the decimal part
-    const rightSidedAlphas = tf.sub(
-      1,
-      tf.sub(xResampled, xResampled.asType("int32"))
-    );
-    // Do the linear interpolation at each point.
-    const yResampled = tf.add(
-      tf.mul(y.gather(yLeftIndexes), tf.sub(1, rightSidedAlphas)),
-      tf.mul(y.gather(yRightIndexes), rightSidedAlphas)
-    );
-
-    // Do the actual spectrogram now...
     return tf
       .sqrt(
-        tf.abs(tf.signal.stft(yResampled, this.frameLength, this.frameStep))
+        tf.abs(tf.signal.stft(y, this.actualFrameLength, this.actualFrameStep))
       )
+      .slice([0, 0], [-1, 257]) // Implicitly resample by ignoring higher freqs
       .expandDims();
   }
 
@@ -95,6 +76,7 @@ onmessage = function(e) {
   ffts = modelOut[1];
   ffts = ffts
     .transpose([0, 2, 1])
+    .reverse(1)
     .flatten()
     .div(tf.add(ffts.max(), 0.000001))
     .mul(255)
