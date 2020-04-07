@@ -52,7 +52,12 @@ class Spectrogram(keras.layers.Layer):
 
     def call(self, x):
         y = tf.signal.stft(x, self.frame_length, self.frame_step, pad_end=True)
-        return tf.abs(tf.math.conj(y) * y)
+        y = tf.abs(tf.math.conj(y) * y)
+        # Handle resampling implicitly by either
+        # 1. zero padding higher frequencies for slower signals, or
+        # 2. cutting off higher frequencies for faster signals.
+        # TODO
+        return y
 
     def get_config(self) -> Dict[str, Any]:
         return {
