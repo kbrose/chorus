@@ -170,8 +170,6 @@ def train(name: str):
             raise ValueError('newline not allowed in target names')
         f.write('\n'.join(TARGETS))
 
-    tf.profiler.experimental.server.start(6009)
-
     model.fit(
         train,
         callbacks=[tb, checkpoint, lr_reducer],

@@ -5,7 +5,7 @@
 #    pip-compile dev-requirements.in
 #
 absl-py==0.9.0            # via -r requirements.txt, -r test-requirements.txt, tensorboard, tensorflow
-appnope==0.1.0            # via ipykernel, ipython
+appnope==0.1.0            # via -r dev-requirements.in
 astor==0.8.1              # via -r requirements.txt, -r test-requirements.txt, tensorflow
 attrs==19.3.0             # via -r test-requirements.txt, jsonschema, pytest
 audioread==2.1.8          # via -r requirements.txt, -r test-requirements.txt, librosa
@@ -101,7 +101,7 @@ scipy==1.4.1              # via -r requirements.txt, -r test-requirements.txt, l
 send2trash==1.5.0         # via notebook
 six==1.14.0               # via -r requirements.txt, -r test-requirements.txt, absl-py, bleach, cycler, google-auth, google-pasta, grpcio, h5py, jsonschema, keras-preprocessing, librosa, packaging, protobuf, python-dateutil, resampy, tensorboard, tensorflow, traitlets
 soundfile==0.10.3.post1   # via -r requirements.txt, -r test-requirements.txt, librosa
-tensorboard==2.1.1        # via -r requirements.txt, -r test-requirements.txt, tensorflow
+tensorboard==2.1.1        # via -r dev-requirements.in, -r requirements.txt, -r test-requirements.txt, tensorflow
 tensorflow-estimator==2.1.0  # via -r requirements.txt, -r test-requirements.txt, tensorflow
 tensorflow==2.1.0         # via -r requirements.txt, -r test-requirements.txt
 termcolor==1.1.0          # via -r requirements.txt, -r test-requirements.txt, tensorflow

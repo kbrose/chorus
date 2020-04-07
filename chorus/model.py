@@ -52,7 +52,7 @@ class Spectrogram(keras.layers.Layer):
 
     def call(self, x):
         y = tf.signal.stft(x, self.frame_length, self.frame_step, pad_end=True)
-        y = tf.abs(tf.math.conj(y) * y)
+        y = tf.sqrt(tf.abs(y))
         # Handle resampling implicitly by either
         # 1. zero padding higher frequencies for slower signals, or
         # 2. cutting off higher frequencies for faster signals.
@@ -116,19 +116,19 @@ def make_model() -> keras.models.Model:
 
     x = keras.layers.Dropout(rate=0.25)(x)
 
-    x = keras.layers.Conv1D(128, 7, strides=2)(x)
+    x = keras.layers.Conv1D(64, 7, strides=2)(x)
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.ReLU()(x)
     x = keras.layers.MaxPooling1D(3, strides=2)(x)
 
-    for n_feats_1, n_feats_2 in [(32, 64), (64, 128), (64, 256), (64, 512)]:
+    for n_feats_1, n_feats_2 in [(16, 32), (32, 64)]:
         x = keras.layers.Dropout(rate=0.25)(x)
         x = _resnet_blocks(x, n_feats_1, n_feats_2, 3)
 
     # Average the features over the time series.
     x = keras.layers.GlobalAveragePooling1D()(x)
 
-    for unit in [256, 128]:
+    for unit in [32, 64]:
         x = keras.layers.Dense(unit, activation='relu')(x)
 
     probs = keras.layers.Dense(len(TARGETS), activation='sigmoid')(x)
