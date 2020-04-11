@@ -16,6 +16,14 @@ Determine the bird from its call
 
 After reviewing, it seems like xeno-canto is a clear winner in the short term. If the Macaulay Library is willing to share their data they might be a good follow up.
 
+*Update:* After receiving the terms of use from Macaulay Library, it seems like they are too restrictive:
+
+> Macaulay Library media and data may not be reproduced, distributed, **or used to make products of any kind (whether commercial or noncommercial)** without prior written permission of the Cornell Lab of Ornithology.
+> ...
+> All Macaulay Library media assets are provided with additional supporting metadata sufficient to make sensible and informed decisions about data use.
+
+(Emphasis mine.) I'll just stick with xeno-canto.
+
 ## Developing
 
 ### Python dependencies
