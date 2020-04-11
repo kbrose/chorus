@@ -91,7 +91,9 @@ def _make_dataset(
     def data_generator():
         while True:
             if aug_df is None:
-                yield from zip(map(load, df['id']), y)
+                idx = rng.permutation(y.shape[0])
+                for id_, y_instance in zip(df['id'].iloc[idx], y[idx]):
+                    yield (load(id_), np.ones(SAMPLE_RATE)), y_instance
             else:
                 idx = rng.permutation(y.shape[0])
                 for audio, label in zip(map(load, df['id'].iloc[idx]), y[idx]):
@@ -111,10 +113,12 @@ def _make_dataset(
                             scale=audio.std() * rng.random() * 0.75,
                             size=audio.size,
                         )
-                    yield audio, label
+                    yield (audio, np.ones(SAMPLE_RATE)), label
 
     return tf.data.Dataset.from_generator(
-        data_generator, (tf.float32, tf.int16), ((None,), (len(TARGETS),))
+        data_generator,
+        ((tf.float32, tf.float32), tf.int16),
+        (((None,), (None,)), (len(TARGETS),))
     )
 
 
@@ -147,7 +151,8 @@ def train(name: str):
     model.summary()
 
     train, train_len, test, test_len = get_model_data()
-    train = train.repeat().batch(BATCH).prefetch(50)
+    print(f'Training on {train_len} samples, testing on {test_len} samples')
+    train = train.repeat().batch(BATCH).prefetch(100)
     test = test.repeat().batch(1).prefetch(50)
 
     tb = tf.keras.callbacks.TensorBoard(
