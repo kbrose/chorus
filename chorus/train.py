@@ -35,6 +35,10 @@ class Data(NamedTuple):
 
 
 class ReduceLRBacktrack(tf.keras.callbacks.ReduceLROnPlateau):
+    """
+    Behaves the same as tf.keras.callbacks.ReduceLROnPlateau, except
+    it also resets the state to the best performing epoch.
+    """
     def __init__(self, model_filepath, *args, **kwargs):
         super(ReduceLRBacktrack, self).__init__(*args, **kwargs)
         self.model_filepath = model_filepath
@@ -60,9 +64,59 @@ class ReduceLRBacktrack(tf.keras.callbacks.ReduceLROnPlateau):
         super().on_epoch_end(epoch, logs)  # actually reduce LR
 
 
+def get_model_data() -> Data:
+    """
+    Get the training and testing data to be used for the model.
+
+    Returns
+    -------
+    Data
+    """
+    df = load_saved_xeno_canto_meta()
+    observed_ids = [f.stem for f in (_XC_DATA_FOLDER / 'numpy').glob('*')]
+    aug_df = df.loc[df['id'].isin(observed_ids)].copy()
+    # Filter out poor quality recordings, and recordings with multiple species
+    df = df.loc[
+        df['q'].isin(['A', 'B', 'C'])
+        & (df['en'].isin(TARGETS))
+        & (df['id'].isin(observed_ids))
+        & (df['length-seconds'] > 5)
+    ]
+    train_df, test_df = sklearn.model_selection.train_test_split(
+        df, test_size=0.2, stratify=df['en'], random_state=20200310
+    )
+
+    return Data(
+        train=_make_dataset(train_df, aug_df),
+        train_len=train_df.shape[0],
+        test=_make_dataset(test_df, None),
+        test_len=test_df.shape[0],
+    )
+
+
 def _make_dataset(
     df: pd.DataFrame, aug_df: Optional[pd.DataFrame]
 ) -> tf.data.Dataset:
+    """
+    Create a tf.data.Dataset from the given dataframe and optional
+    augmenting dataframe.
+
+    Inputs
+    ------
+    df : pd.DataFrame
+        Dataframe that contains the columns 'id', 'en', and 'also'.
+        Likely the result of calling load_saved_xeno_canto_meta()
+    aug_df : pd.DataFrame
+        Same format as `df`. If provided, we assume we are creating
+        a training dataset and will also randomly add noise and shuffling.
+        The audio in this dataframe will sometimes be added
+        to the original audio.
+
+    Returns
+    -------
+    tf.data.Dataset
+        The elements will be tuples of (inputs, expected_outputs)
+    """
     rng = np.random.RandomState(seed=20200313)
     sci2en = scientific_to_en(df)
 
@@ -91,13 +145,12 @@ def _make_dataset(
     def data_generator():
         while True:
             if aug_df is None:
-                idx = rng.permutation(y.shape[0])
-                for id_, y_instance in zip(df['id'].iloc[idx], y[idx]):
+                for id_, y_instance in zip(df['id'], y):
                     yield (load(id_), np.ones(SAMPLE_RATE)), y_instance
             else:
                 idx = rng.permutation(y.shape[0])
                 for audio, label in zip(map(load, df['id'].iloc[idx]), y[idx]):
-                    if rng.random() < 1 / 8:
+                    if rng.random() < 1 / 32:
                         aug_row = aug_df.sample(n=1).iloc[0]
                         label = np.logical_or(
                             label,
@@ -108,7 +161,7 @@ def _make_dataset(
                         smoothing = rng.random() + 0.5
                         audio *= smoothing
                         audio += load(aug_row['id']) * (1.5 - smoothing)
-                    if rng.random() < 1 / 16:
+                    if rng.random() < 1 / 32:
                         audio += rng.normal(
                             scale=audio.std() * rng.random() * 0.75,
                             size=audio.size,
@@ -122,38 +175,18 @@ def _make_dataset(
     )
 
 
-def get_model_data() -> Data:
-    df = load_saved_xeno_canto_meta()
-    observed_ids = [f.stem for f in (_XC_DATA_FOLDER / 'numpy').glob('*')]
-    aug_df = df.loc[df['id'].isin(observed_ids)].copy()
-    # Filter out poor quality recordings, and recordings with multiple species
-    df = df.loc[
-        df['q'].isin(['A', 'B', 'C'])
-        & (df['en'].isin(TARGETS))
-        & (df['id'].isin(observed_ids))
-        & (df['length-seconds'] > 5)
-    ]
-    train_df, test_df = sklearn.model_selection.train_test_split(
-        df, test_size=0.2, stratify=df['en'], random_state=20200310
-    )
-
-    return Data(
-        train=_make_dataset(train_df, aug_df),
-        train_len=train_df.shape[0],
-        test=_make_dataset(test_df, None),
-        test_len=test_df.shape[0],
-    )
-
-
 def train(name: str):
-    model = make_model()
+    """
+    Train a chorus model with the given name.
+    """
+    model = make_model(name)
     model.compile('adam', 'binary_crossentropy', metrics=['accuracy'])
     model.summary()
 
     train, train_len, test, test_len = get_model_data()
     print(f'Training on {train_len} samples, testing on {test_len} samples')
     train = train.repeat().batch(BATCH).prefetch(100)
-    test = test.repeat().batch(1).prefetch(50)
+    test = test.repeat().batch(1).prefetch(test_len // BATCH)
 
     tb = tf.keras.callbacks.TensorBoard(
         str(LOGS_FOLDER / name), histogram_freq=5

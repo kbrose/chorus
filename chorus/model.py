@@ -11,21 +11,21 @@ TARGETS = [
     "Northern Cardinal",
     "American Robin",
     "Red Crossbill",
-    # "Red-winged Blackbird",
-    # "House Wren",
-    # "Bewick's Wren",
-    # "Dark-eyed Junco",
-    # "Blue Jay",
-    # "Spotted Towhee",
-    # "Tufted Titmouse",
-    # "Great Horned Owl",
-    # "Northern Saw-whet Owl",
-    # "Grey Catbird",
-    # "Northern Mockingbird",
-    # "Marsh Wren",
-    # "American Crow",
-    # "Common Yellowthroat",
-    # "Northern Raven",
+    "Red-winged Blackbird",
+    "House Wren",
+    "Bewick's Wren",
+    "Dark-eyed Junco",
+    "Blue Jay",
+    "Spotted Towhee",
+    "Tufted Titmouse",
+    "Great Horned Owl",
+    "Northern Saw-whet Owl",
+    "Grey Catbird",
+    "Northern Mockingbird",
+    "Marsh Wren",
+    "American Crow",
+    "Common Yellowthroat",
+    "Northern Raven",
 ]
 TARGET_MAX_FREQ = 15_000  # Should be half the minimum expected sample rate
 NUM_FREQS = 257
@@ -157,7 +157,7 @@ def _resnet_blocks(x, n_feats_1, n_feats_2, num_id):
     return x
 
 
-def make_model() -> keras.models.Model:
+def make_model(name: str) -> keras.models.Model:
     """
     Create the bird song model.
     """
@@ -179,7 +179,7 @@ def make_model() -> keras.models.Model:
 
     for n_feats_1, n_feats_2 in [(32, 16), (16, 16), (16, 32)]:
         x = keras.layers.Dropout(rate=0.25)(x)
-        x = _resnet_blocks(x, n_feats_1, n_feats_2, 3)
+        x = _resnet_blocks(x, n_feats_1, n_feats_2, 2)
 
     # Average the features over the time series.
     x = keras.layers.GlobalAveragePooling1D()(x)
@@ -189,7 +189,7 @@ def make_model() -> keras.models.Model:
 
     probs = keras.layers.Dense(len(TARGETS), activation='sigmoid')(x)
 
-    return keras.models.Model((audio, fs), probs)
+    return keras.models.Model((audio, fs), probs, name=name)
 
 
 def load_model(filepath: Path):
