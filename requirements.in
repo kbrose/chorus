@@ -1,7 +1,9 @@
 click
 pandas
 requests
-tensorflow
+torch
+torchaudio
+numpy
 typing-extensions
 tqdm
 librosa

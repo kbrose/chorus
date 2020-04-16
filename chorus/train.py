@@ -5,14 +5,18 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import tensorflow as tf
+import torch
+import torch.utils.data
+import torch.nn.functional as F
+from tqdm import tqdm
 import sklearn.model_selection
 import sklearn.preprocessing
+from sklearn.metrics import roc_auc_score
 
 from chorus.data import (
     DATA_FOLDER, load_saved_xeno_canto_meta, scientific_to_en
 )
-from chorus.model import TARGETS, make_model
+from chorus.model import TARGETS, Model
 
 _XC_DATA_FOLDER = DATA_FOLDER / 'xeno-canto'
 LOGS_FOLDER = Path(__file__).parents[1] / 'logs'
@@ -22,46 +26,99 @@ BATCH = 32
 SAMPLE_LEN_SECONDS = 20
 SAMPLE_RATE = 30_000
 TRAIN_SAMPLES = SAMPLE_RATE * SAMPLE_LEN_SECONDS
+if torch.cuda.is_available():
+    DEVICE = torch.device('cuda')
+else:
+    DEVICE = torch.device('cpu')
 
 # sklearn.preprocessing.MultiLabelBinarizer is very loud.
 warnings.filterwarnings('ignore', 'unknown class')
 
 
+class SongDataset(torch.utils.data.Dataset):
+    """
+    Create a tf.data.Dataset from the given dataframe and optional
+    augmenting dataframe.
+    """
+    def __init__(self, df: pd.DataFrame, aug_df: Optional[pd.DataFrame]=None):
+        """
+        Inputs
+        ------
+        df : pd.DataFrame
+            Dataframe that contains the columns 'id', 'en', and 'also'.
+            Likely the result of calling load_saved_xeno_canto_meta()
+        aug_df : pd.DataFrame
+            Same format as `df`. If provided, we assume we are creating
+            a training dataset and will also randomly add noise and shuffling.
+            The audio in this dataframe will sometimes be added
+            to the original audio.
+        """
+        super(SongDataset, self).__init__()
+        self.df = df
+        self.aug_df = aug_df
+
+        self.np_rng = np.random.RandomState(seed=20200313)
+
+        sci2en = scientific_to_en(df)
+
+        def row_to_labels(row):
+            return [row['en']] + list(map(sci2en.get, filter(len, row['also'])))
+
+        mlb = sklearn.preprocessing.MultiLabelBinarizer(TARGETS)
+        mlb.fit([])  # not needed, we passed in TARGETS as the classes
+
+        labels = [row_to_labels(row) for _, row in df.iterrows()]
+        self.y = mlb.transform(labels).astype(int)
+
+        if aug_df is not None:
+            aug_labels = [row_to_labels(row) for _, row in aug_df.iterrows()]
+            self.aug_y = mlb.transform(aug_labels).astype(int)
+        else:
+            self.aug_y = None
+
+    def load(self, xc_id: int, target_length: int) -> np.ndarray:
+        x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy')
+        if x.size < target_length:
+            # repeat signal to have length >= target_length
+            x = np.tile(x, math.ceil(target_length / x.size))
+        start = self.np_rng.randint(0, max(x.size - target_length, 1))
+        x = x[start:start + target_length]
+        return x
+
+    def __getitem__(self, index):
+        """
+        Inputs
+        ------
+        index : int
+
+        Returns
+        -------
+        (input, expected_output)
+        """
+        xc_id = self.df.iloc[index]['id']
+        x = self.load(xc_id, TRAIN_SAMPLES)
+        y = self.y[index]
+        if self.aug_df is not None:
+            if self.np_rng.random() < 1 / 32:
+                aug_index = self.np_rng.randint(self.aug_df.shape[0])
+                aug_row = self.aug_df.iloc[aug_index]
+                y = np.logical_or(y, self.aug_y[aug_index]).astype(int)
+                smoothing = self.np_rng.random() * 0.75
+                x += self.load(aug_row['id'], TRAIN_SAMPLES) * smoothing
+            if self.np_rng.random() < 1 / 64:
+                x += self.np_rng.normal(
+                    scale=x.std() * self.np_rng.random() * 0.25,
+                    size=x.size,
+                )
+        return torch.Tensor(x), torch.Tensor(y)
+
+    def __len__(self):
+        return self.df.shape[0]
+
+
 class Data(NamedTuple):
-    train: tf.data.Dataset
-    train_len: int
-    test: tf.data.Dataset
-    test_len: int
-
-
-class ReduceLRBacktrack(tf.keras.callbacks.ReduceLROnPlateau):
-    """
-    Behaves the same as tf.keras.callbacks.ReduceLROnPlateau, except
-    it also resets the state to the best performing epoch.
-    """
-    def __init__(self, model_filepath, *args, **kwargs):
-        super(ReduceLRBacktrack, self).__init__(*args, **kwargs)
-        self.model_filepath = model_filepath
-        self.best_epoch = 0
-
-    def on_epoch_end(self, epoch, logs=None):
-        current = logs.get(self.monitor)
-        if current is None:
-            tf.get_logger().warning(
-                f'ReduceLROnPlateau conditioned on metric `{self.monitor}`'
-                ' which is not available. Available metrics are:'
-                f' {",".join(list(logs.keys()))}'
-            )
-        if self.monitor_op(current, self.best):
-            self.best_epoch = epoch + 1
-        elif not self.in_cooldown() and self.wait + 1 >= self.patience:
-            # load best model so far
-            print(f"\nBacktracking to epoch {self.best_epoch}")
-            self.model.load_weights(
-                self.model_filepath.format(epoch=self.best_epoch)
-            )
-
-        super().on_epoch_end(epoch, logs)  # actually reduce LR
+    train: SongDataset
+    test: SongDataset
 
 
 def get_model_data() -> Data:
@@ -86,92 +143,10 @@ def get_model_data() -> Data:
         df, test_size=0.2, stratify=df['en'], random_state=20200310
     )
 
+    aug_df.drop(test_df.index, inplace=True)
+
     return Data(
-        train=_make_dataset(train_df, aug_df),
-        train_len=train_df.shape[0],
-        test=_make_dataset(test_df, None),
-        test_len=test_df.shape[0],
-    )
-
-
-def _make_dataset(
-    df: pd.DataFrame, aug_df: Optional[pd.DataFrame]
-) -> tf.data.Dataset:
-    """
-    Create a tf.data.Dataset from the given dataframe and optional
-    augmenting dataframe.
-
-    Inputs
-    ------
-    df : pd.DataFrame
-        Dataframe that contains the columns 'id', 'en', and 'also'.
-        Likely the result of calling load_saved_xeno_canto_meta()
-    aug_df : pd.DataFrame
-        Same format as `df`. If provided, we assume we are creating
-        a training dataset and will also randomly add noise and shuffling.
-        The audio in this dataframe will sometimes be added
-        to the original audio.
-
-    Returns
-    -------
-    tf.data.Dataset
-        The elements will be tuples of (inputs, expected_outputs)
-    """
-    rng = np.random.RandomState(seed=20200313)
-    sci2en = scientific_to_en(df)
-
-    mlb = sklearn.preprocessing.MultiLabelBinarizer(TARGETS)
-    mlb.fit([])  # not needed, we passed in TARGETS as the classes
-
-    def row_to_labels(row):
-        return [row['en']] + list(map(sci2en.get, filter(len, row['also'])))
-
-    labels = [row_to_labels(row) for _, row in df.iterrows()]
-    y = mlb.transform(labels).astype(int)
-    print(f'mean value of labels: {y.mean()}')
-
-    def load(xc_id: int) -> np.ndarray:
-        x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy')
-        if aug_df is not None:
-            if x.size < TRAIN_SAMPLES:
-                # repeat signal to have length >= TRAIN_SAMPLES
-                x = np.tile(x, math.ceil(TRAIN_SAMPLES / x.size))
-            start = rng.randint(0, max(x.size - TRAIN_SAMPLES, 1))
-            x = x[start:start + TRAIN_SAMPLES]
-        else:
-            x = x[:SAMPLE_RATE * 360]  # limit to 3 minutes
-        return x
-
-    def data_generator():
-        while True:
-            if aug_df is None:
-                for id_, y_instance in zip(df['id'], y):
-                    yield (load(id_), np.ones(SAMPLE_RATE)), y_instance
-            else:
-                idx = rng.permutation(y.shape[0])
-                for audio, label in zip(map(load, df['id'].iloc[idx]), y[idx]):
-                    if rng.random() < 1 / 32:
-                        aug_row = aug_df.sample(n=1).iloc[0]
-                        label = np.logical_or(
-                            label,
-                            mlb.transform([row_to_labels(aug_row)]).flatten()
-                        ).astype(int)
-                        # We'll add in the audio, making sure the original
-                        # audio is not less than 1/3rd the strength of the new
-                        smoothing = rng.random() + 0.5
-                        audio *= smoothing
-                        audio += load(aug_row['id']) * (1.5 - smoothing)
-                    if rng.random() < 1 / 32:
-                        audio += rng.normal(
-                            scale=audio.std() * rng.random() * 0.75,
-                            size=audio.size,
-                        )
-                    yield (audio, np.ones(SAMPLE_RATE)), label
-
-    return tf.data.Dataset.from_generator(
-        data_generator,
-        ((tf.float32, tf.float32), tf.int16),
-        (((None,), (None,)), (len(TARGETS),))
+        train=SongDataset(train_df, aug_df), test=SongDataset(test_df, None),
     )
 
 
@@ -179,40 +154,58 @@ def train(name: str):
     """
     Train a chorus model with the given name.
     """
-    model = make_model(name)
-    model.compile('adam', 'binary_crossentropy', metrics=['accuracy'])
-    model.summary()
+    model = Model().to(DEVICE)
+    opt = torch.optim.Adam(model.parameters(), lr=0.001)
+    loss_fn = F.binary_cross_entropy
 
-    train, train_len, test, test_len = get_model_data()
-    print(f'Training on {train_len} samples, testing on {test_len} samples')
-    train = train.repeat().batch(BATCH).prefetch(100)
-    test = test.repeat().batch(1).prefetch(test_len // BATCH)
+    train, test = get_model_data()
+    print(f'Training on {len(train)} samples, testing on {len(test)} samples')
 
-    tb = tf.keras.callbacks.TensorBoard(
-        str(LOGS_FOLDER / name), histogram_freq=5
+    train_dl = torch.utils.data.DataLoader(
+        train, BATCH, shuffle=True, num_workers=4, pin_memory=True
     )
-    checkpoint_name = str(SAVED_MODELS / name / 'weights-{epoch:04d}.hdf5')
-    checkpoint = tf.keras.callbacks.ModelCheckpoint(
-        checkpoint_name,
-        save_best_only=True,
-    )
-    lr_reducer = ReduceLRBacktrack(checkpoint_name, factor=0.5, patience=5)
+    test_dl = torch.utils.data.DataLoader(test, 1, num_workers=4, pin_memory=True)
 
     # Create model/logs folders
     (SAVED_MODELS / name).mkdir(parents=True, exist_ok=True)
     (LOGS_FOLDER / name).mkdir(parents=True, exist_ok=True)
 
-    # Write out the targets names
-    with open(LOGS_FOLDER / name / 'target-names.txt', 'w') as f:
-        if any('\n' in target for target in TARGETS):
-            raise ValueError('newline not allowed in target names')
-        f.write('\n'.join(TARGETS))
+    averaged_train_loss = None
+    for ep in range(1_000):
+        with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
+            model.train()
+            for i, (xb, yb) in enumerate(train_dl):
+                pred = model(xb)
+                loss = loss_fn(pred, yb.to('cuda'))
 
-    model.fit(
-        train,
-        callbacks=[tb, checkpoint, lr_reducer],
-        validation_data=test,
-        steps_per_epoch=math.ceil(train_len // BATCH),
-        validation_steps=test_len,
-        epochs=500
-    )
+                loss.backward()
+                opt.step()
+                opt.zero_grad()
+
+                pbar.update()
+                curr_loss = loss.detach().cpu().numpy()
+                if averaged_train_loss is None:
+                    averaged_train_loss = curr_loss
+                else:
+                    averaged_train_loss = (
+                        averaged_train_loss * 0.95 + curr_loss * 0.05
+                    )
+                pbar.set_postfix_str(
+                    f'{averaged_train_loss:0>.4f}', refresh=False
+                )
+
+        model.eval()
+        with torch.no_grad():
+            preds_targets = [(model(x), y) for x, y in test_dl]
+            valid_loss = sum(
+                loss_fn(preds, y.to('cuda')) for preds, y in preds_targets
+            )
+            valid_loss = (valid_loss / len(test_dl)).cpu().numpy()
+            yhats = np.stack([pt[0].cpu().numpy()[0] for pt in preds_targets])
+            ys = np.stack([pt[1].cpu().numpy()[0] for pt in preds_targets])
+
+            msg = f'{"validation loss": >32}={valid_loss:0>.4f}'
+            for yhat, y, label in zip(yhats.T, ys.T, TARGETS):
+                msg += f'\n{label: >25} ROCAUC={roc_auc_score(y, yhat):0>.4f}'
+
+            print(msg)
