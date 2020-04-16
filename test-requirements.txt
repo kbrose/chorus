@@ -6,28 +6,28 @@
 #
 attrs==19.3.0             # via pytest
 audioread==2.1.8          # via -r requirements.txt, librosa
-certifi==2019.11.28       # via -r requirements.txt, requests
+certifi==2020.4.5.1       # via -r requirements.txt, requests
 cffi==1.14.0              # via -r requirements.txt, soundfile
 chardet==3.0.4            # via -r requirements.txt, requests
-click==7.0                # via -r requirements.txt
-coverage==5.0.3           # via pytest-cov
+click==7.1.1              # via -r requirements.txt
+coverage==5.1             # via pytest-cov
 decorator==4.4.2          # via -r requirements.txt, librosa
 idna==2.9                 # via -r requirements.txt, requests
-importlib-metadata==1.5.0  # via pluggy, pytest
+importlib-metadata==1.6.0  # via pluggy, pytest
 joblib==0.14.1            # via -r requirements.txt, librosa, scikit-learn
 librosa==0.7.2            # via -r requirements.txt
 llvmlite==0.31.0          # via -r requirements.txt, numba
 more-itertools==8.2.0     # via pytest
 numba==0.48.0             # via -r requirements.txt, librosa, resampy
-numpy==1.18.1             # via -r requirements.txt, librosa, numba, pandas, resampy, scikit-learn, scipy
+numpy==1.18.2             # via -r requirements.txt, librosa, numba, pandas, resampy, scikit-learn, scipy
 packaging==20.3           # via pytest
-pandas==1.0.1             # via -r requirements.txt
+pandas==1.0.3             # via -r requirements.txt
 pluggy==0.13.1            # via pytest
 py==1.8.1                 # via pytest
 pycparser==2.20           # via -r requirements.txt, cffi
-pyparsing==2.4.6          # via packaging
+pyparsing==2.4.7          # via packaging
 pytest-cov==2.8.1         # via -r test-requirements.in
-pytest==5.3.5             # via -r test-requirements.in, pytest-cov
+pytest==5.4.1             # via -r test-requirements.in, pytest-cov
 python-dateutil==2.8.1    # via -r requirements.txt, pandas
 pytz==2019.3              # via -r requirements.txt, pandas
 requests==2.23.0          # via -r requirements.txt
@@ -38,10 +38,10 @@ six==1.14.0               # via -r requirements.txt, librosa, packaging, python-
 soundfile==0.10.3.post1   # via -r requirements.txt, librosa
 torch==1.4.0              # via -r requirements.txt, torchaudio
 torchaudio==0.4.0         # via -r requirements.txt
-tqdm==4.43.0              # via -r requirements.txt
-typing-extensions==3.7.4.1  # via -r requirements.txt
+tqdm==4.45.0              # via -r requirements.txt
+typing-extensions==3.7.4.2  # via -r requirements.txt
 urllib3==1.25.8           # via -r requirements.txt, requests
-wcwidth==0.1.8            # via pytest
+wcwidth==0.1.9            # via pytest
 zipp==3.1.0               # via importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:

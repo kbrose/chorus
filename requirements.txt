@@ -5,18 +5,18 @@
 #    pip-compile requirements.in
 #
 audioread==2.1.8          # via librosa
-certifi==2019.11.28       # via requests
+certifi==2020.4.5.1       # via requests
 cffi==1.14.0              # via soundfile
 chardet==3.0.4            # via requests
-click==7.0                # via -r requirements.in
+click==7.1.1              # via -r requirements.in
 decorator==4.4.2          # via librosa
 idna==2.9                 # via requests
 joblib==0.14.1            # via librosa, scikit-learn
 librosa==0.7.2            # via -r requirements.in
 llvmlite==0.31.0          # via numba
 numba==0.48.0             # via librosa, resampy
-numpy==1.18.1             # via -r requirements.in, librosa, numba, pandas, resampy, scikit-learn, scipy
-pandas==1.0.1             # via -r requirements.in
+numpy==1.18.2             # via -r requirements.in, librosa, numba, pandas, resampy, scikit-learn, scipy
+pandas==1.0.3             # via -r requirements.in
 pycparser==2.20           # via cffi
 python-dateutil==2.8.1    # via pandas
 pytz==2019.3              # via pandas
@@ -28,8 +28,8 @@ six==1.14.0               # via librosa, python-dateutil, resampy
 soundfile==0.10.3.post1   # via librosa
 torch==1.4.0              # via -r requirements.in, torchaudio
 torchaudio==0.4.0         # via -r requirements.in
-tqdm==4.43.0              # via -r requirements.in
-typing-extensions==3.7.4.1  # via -r requirements.in
+tqdm==4.45.0              # via -r requirements.in
+typing-extensions==3.7.4.2  # via -r requirements.in
 urllib3==1.25.8           # via requests
 
 # The following packages are considered to be unsafe in a requirements file:
