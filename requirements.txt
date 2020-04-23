@@ -9,25 +9,31 @@ certifi==2020.4.5.1       # via requests
 cffi==1.14.0              # via soundfile
 chardet==3.0.4            # via requests
 click==7.1.1              # via -r requirements.in
+cycler==0.10.0            # via matplotlib
 decorator==4.4.2          # via librosa
 idna==2.9                 # via requests
 joblib==0.14.1            # via librosa, scikit-learn
+kiwisolver==1.2.0         # via matplotlib
 librosa==0.7.2            # via -r requirements.in
 llvmlite==0.31.0          # via numba
+matplotlib==3.2.1         # via -r requirements.in
 numba==0.48.0             # via librosa, resampy
-numpy==1.18.2             # via -r requirements.in, librosa, numba, pandas, resampy, scikit-learn, scipy
+numpy==1.18.2             # via -r requirements.in, librosa, matplotlib, numba, pandas, resampy, scikit-learn, scipy
 pandas==1.0.3             # via -r requirements.in
+pillow==7.1.1             # via -r requirements.in
 pycparser==2.20           # via cffi
-python-dateutil==2.8.1    # via pandas
+pyparsing==2.4.7          # via matplotlib
+python-dateutil==2.8.1    # via matplotlib, pandas
 pytz==2019.3              # via pandas
 requests==2.23.0          # via -r requirements.in
 resampy==0.2.2            # via librosa
 scikit-learn==0.22.2.post1  # via -r requirements.in, librosa
 scipy==1.4.1              # via librosa, resampy, scikit-learn
-six==1.14.0               # via librosa, python-dateutil, resampy
+six==1.14.0               # via cycler, librosa, python-dateutil, resampy
 soundfile==0.10.3.post1   # via librosa
 torch==1.4.0              # via -r requirements.in, torchaudio
 torchaudio==0.4.0         # via -r requirements.in
+torchsummary==1.5.1       # via -r requirements.in
 tqdm==4.45.0              # via -r requirements.in
 typing-extensions==3.7.4.2  # via -r requirements.in
 urllib3==1.25.8           # via requests

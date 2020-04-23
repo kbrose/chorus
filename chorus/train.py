@@ -7,11 +7,15 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.utils.data
-import torch.nn.functional as F
 from tqdm import tqdm
 import sklearn.model_selection
-import sklearn.preprocessing
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_curve, roc_auc_score
+import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+import torch.utils.data
+from torch.utils.tensorboard import SummaryWriter
+from torchsummary import summary
 
 from chorus.data import (
     DATA_FOLDER, load_saved_xeno_canto_meta, scientific_to_en
@@ -53,7 +57,7 @@ class SongDataset(torch.utils.data.Dataset):
             The audio in this dataframe will sometimes be added
             to the original audio.
         """
-        super(SongDataset, self).__init__()
+        super().__init__()
         self.df = df
         self.aug_df = aug_df
 
@@ -102,7 +106,7 @@ class SongDataset(torch.utils.data.Dataset):
             if self.np_rng.random() < 1 / 32:
                 aug_index = self.np_rng.randint(self.aug_df.shape[0])
                 aug_row = self.aug_df.iloc[aug_index]
-                y = np.logical_or(y, self.aug_y[aug_index]).astype(int)
+                y = np.logical_or(self.aug_y[aug_index], y)
                 smoothing = self.np_rng.random() * 0.75
                 x += self.load(aug_row['id'], TRAIN_SAMPLES) * smoothing
             if self.np_rng.random() < 1 / 64:
@@ -110,7 +114,7 @@ class SongDataset(torch.utils.data.Dataset):
                     scale=x.std() * self.np_rng.random() * 0.25,
                     size=x.size,
                 )
-        return torch.Tensor(x), torch.Tensor(y)
+        return torch.as_tensor(x), torch.as_tensor(y.astype(float))
 
     def __len__(self):
         return self.df.shape[0]
@@ -150,62 +154,120 @@ def get_model_data() -> Data:
     )
 
 
+def evaluate(
+    epoch: int,
+    model: nn.Module,
+    loss_fn: nn.Module,
+    data: torch.utils.data.DataLoader,
+    tb_writer: SummaryWriter,
+):
+    preds_targets = [(model(x.to(DEVICE)), y) for x, y in data]
+    valid_loss = torch.tensor(
+        [loss_fn(preds, y.to(DEVICE)) for preds, y in preds_targets]
+    ).mean().cpu().numpy()
+    valid_loss = float(valid_loss)
+
+    tb_writer.add_scalar('valid_loss', valid_loss, epoch)
+
+    yhats = np.stack([pt[0].cpu().numpy()[0] for pt in preds_targets])
+    ys = np.stack([pt[1].cpu().numpy()[0] for pt in preds_targets])
+
+    for yhat, y, label in zip(yhats.T, ys.T, TARGETS):
+        f, ax = plt.subplots(1)
+        fpr, tpr, _ = roc_curve(y, yhat)
+        ax.plot(fpr, tpr)
+        ax.set_aspect('equal')
+        ax.set_xlim([0, 1])
+        ax.set_ylim([0, 1])
+        ax.plot([0, 1], [0, 1], 'k--')
+        auc = roc_auc_score(y, yhat)
+        ax.set_title(f'{label} - AUC = {auc:.3f}')
+        tb_writer.add_figure(label, f, epoch)
+
+    return valid_loss
+
+
 def train(name: str):
     """
     Train a chorus model with the given name.
     """
-    model = Model().to(DEVICE)
+    # Set up model and optimizations
+    model = Model()
+    model.to(DEVICE)
     opt = torch.optim.Adam(model.parameters(), lr=0.001)
-    loss_fn = F.binary_cross_entropy
+    loss_fn = nn.BCEWithLogitsLoss()
+    summary(model, input_size=(TRAIN_SAMPLES,))
 
+    # Set up data
     train, test = get_model_data()
     print(f'Training on {len(train)} samples, testing on {len(test)} samples')
-
     train_dl = torch.utils.data.DataLoader(
-        train, BATCH, shuffle=True, num_workers=4, pin_memory=True
-    )
-    test_dl = torch.utils.data.DataLoader(test, 1, num_workers=4, pin_memory=True)
+        train, BATCH, shuffle=True, num_workers=4, pin_memory=True)
+    test_dl = torch.utils.data.DataLoader(
+        test, 1, num_workers=4, pin_memory=True)
 
-    # Create model/logs folders
+    # Set up logging / saving
     (SAVED_MODELS / name).mkdir(parents=True, exist_ok=True)
     (LOGS_FOLDER / name).mkdir(parents=True, exist_ok=True)
+    tb_writer = SummaryWriter(LOGS_FOLDER / name)
+    postfix_str = '{train_loss: <6} {valid_loss: <6}{star}'
 
-    averaged_train_loss = None
+    is_first = True
+    best_valid_loss = float('inf')
+    best_ep = 0
     for ep in range(1_000):
         with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
             model.train()
             for i, (xb, yb) in enumerate(train_dl):
-                pred = model(xb)
-                loss = loss_fn(pred, yb.to('cuda'))
+                xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
+                loss = loss_fn(model(xb), yb)
                 loss.backward()
                 opt.step()
                 opt.zero_grad()
 
                 pbar.update()
-                curr_loss = loss.detach().cpu().numpy()
-                if averaged_train_loss is None:
+                curr_loss = float(loss.detach().cpu().numpy())
+                if is_first:
                     averaged_train_loss = curr_loss
+                    tb_writer.add_graph(model, xb)
+                    is_first = False
                 else:
                     averaged_train_loss = (
                         averaged_train_loss * 0.95 + curr_loss * 0.05
                     )
                 pbar.set_postfix_str(
-                    f'{averaged_train_loss:0>.4f}', refresh=False
+                    postfix_str.format(
+                        train_loss=round(averaged_train_loss, 4),
+                        valid_loss='',
+                        star=' '
+                    ),
+                    refresh=False
                 )
-
-        model.eval()
-        with torch.no_grad():
-            preds_targets = [(model(x), y) for x, y in test_dl]
-            valid_loss = sum(
-                loss_fn(preds, y.to('cuda')) for preds, y in preds_targets
+            tb_writer.add_scalar('train_loss', averaged_train_loss, ep)
+            model.eval()
+            with torch.no_grad():
+                valid_loss = evaluate(ep, model, loss_fn, test_dl, tb_writer)
+                star = ' '
+                if valid_loss < best_valid_loss:
+                    star = '*'
+                    best_valid_loss = valid_loss
+                    best_ep = ep
+                    torch.save(model.state_dict(),
+                               str(SAVED_MODELS / name / f'{ep:0>4}.pth'))
+                pbar.set_postfix_str(
+                    postfix_str.format(
+                        train_loss=round(averaged_train_loss, 4),
+                        valid_loss=round(valid_loss, 4),
+                        star=star
+                    ),
+                    refresh=True
+                )
+        if ((ep + 1 - best_ep) % 10) == 0:
+            opt.param_groups[0]['lr'] /= 10
+            model.load_state_dict(torch.load(
+                str(SAVED_MODELS / name / f'{best_ep:0>4}.pth')))
+            print(
+                f'lowering learning rate to {opt.param_groups[0]["lr"]}'
+                f' and resetting weights to epoch {best_ep}'
             )
-            valid_loss = (valid_loss / len(test_dl)).cpu().numpy()
-            yhats = np.stack([pt[0].cpu().numpy()[0] for pt in preds_targets])
-            ys = np.stack([pt[1].cpu().numpy()[0] for pt in preds_targets])
-
-            msg = f'{"validation loss": >32}={valid_loss:0>.4f}'
-            for yhat, y, label in zip(yhats.T, ys.T, TARGETS):
-                msg += f'\n{label: >25} ROCAUC={roc_auc_score(y, yhat):0>.4f}'
-
-            print(msg)

@@ -3,6 +3,9 @@ pandas
 requests
 torch
 torchaudio
+torchsummary
+matplotlib
+Pillow
 numpy
 typing-extensions
 tqdm

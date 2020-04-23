@@ -16,7 +16,7 @@ cffi==1.14.0              # via -r requirements.txt, -r test-requirements.txt, s
 chardet==3.0.4            # via -r requirements.txt, -r test-requirements.txt, requests
 click==7.1.1              # via -r requirements.txt, -r test-requirements.txt
 coverage==5.1             # via -r test-requirements.txt, pytest-cov
-cycler==0.10.0            # via matplotlib
+cycler==0.10.0            # via -r requirements.txt, -r test-requirements.txt, matplotlib
 decorator==4.4.2          # via -r requirements.txt, -r test-requirements.txt, ipython, librosa, traitlets
 defusedxml==0.6.0         # via nbconvert
 entrypoints==0.3          # via flake8, nbconvert
@@ -25,7 +25,6 @@ google-auth-oauthlib==0.4.1  # via tensorboard
 google-auth==1.14.0       # via google-auth-oauthlib, tensorboard
 grpcio==1.28.1            # via tensorboard
 idna==2.9                 # via -r requirements.txt, -r test-requirements.txt, requests
-importlib-metadata==1.6.0  # via -r test-requirements.txt, jsonschema, pluggy, pytest
 ipykernel==5.2.1          # via ipywidgets, jupyter, jupyter-console, notebook, qtconsole
 ipython-genutils==0.2.0   # via nbformat, notebook, qtconsole, traitlets
 ipython==7.13.0           # via -r dev-requirements.in, ipykernel, ipywidgets, jupyter-console
@@ -41,12 +40,12 @@ jupyter-core==4.6.3       # via jupyter-client, nbconvert, nbformat, notebook, q
 jupyter==1.0.0            # via -r dev-requirements.in
 jupyterlab-server==1.1.1  # via jupyterlab
 jupyterlab==2.1.0         # via -r dev-requirements.in
-kiwisolver==1.2.0         # via matplotlib
+kiwisolver==1.2.0         # via -r requirements.txt, -r test-requirements.txt, matplotlib
 librosa==0.7.2            # via -r requirements.txt, -r test-requirements.txt
 llvmlite==0.31.0          # via -r requirements.txt, -r test-requirements.txt, numba
 markdown==3.2.1           # via tensorboard
 markupsafe==1.1.1         # via jinja2
-matplotlib==3.2.1         # via -r dev-requirements.in
+matplotlib==3.2.1         # via -r dev-requirements.in, -r requirements.txt, -r test-requirements.txt
 mccabe==0.6.1             # via flake8
 mistune==0.8.4            # via nbconvert
 more-itertools==8.2.0     # via -r test-requirements.txt, pytest
@@ -64,6 +63,7 @@ pandocfilters==1.4.2      # via nbconvert
 parso==0.7.0              # via jedi
 pexpect==4.8.0            # via ipython
 pickleshare==0.7.5        # via ipython
+pillow==7.1.1             # via -r requirements.txt, -r test-requirements.txt
 pluggy==0.13.1            # via -r test-requirements.txt, pytest
 prometheus-client==0.7.1  # via notebook
 prompt-toolkit==3.0.5     # via ipython, jupyter-console
@@ -76,7 +76,7 @@ pycodestyle==2.5.0        # via flake8
 pycparser==2.20           # via -r requirements.txt, -r test-requirements.txt, cffi
 pyflakes==2.1.1           # via flake8
 pygments==2.6.1           # via ipython, jupyter-console, nbconvert, qtconsole
-pyparsing==2.4.7          # via -r test-requirements.txt, matplotlib, packaging
+pyparsing==2.4.7          # via -r requirements.txt, -r test-requirements.txt, matplotlib, packaging
 pyrsistent==0.16.0        # via jsonschema
 pytest-cov==2.8.1         # via -r test-requirements.txt
 pytest==5.4.1             # via -r test-requirements.txt, pytest-cov
@@ -100,6 +100,7 @@ terminado==0.8.3          # via notebook
 testpath==0.4.4           # via nbconvert
 torch==1.4.0              # via -r requirements.txt, -r test-requirements.txt, torchaudio
 torchaudio==0.4.0         # via -r requirements.txt, -r test-requirements.txt
+torchsummary==1.5.1       # via -r requirements.txt, -r test-requirements.txt
 tornado==6.0.4            # via ipykernel, jupyter-client, jupyterlab, notebook, terminado
 tqdm==4.45.0              # via -r requirements.txt, -r test-requirements.txt
 traitlets==4.3.3          # via ipykernel, ipython, ipywidgets, jupyter-client, jupyter-core, nbconvert, nbformat, notebook, qtconsole
@@ -111,7 +112,6 @@ webencodings==0.5.1       # via bleach
 werkzeug==1.0.1           # via tensorboard
 wheel==0.34.2             # via tensorboard
 widgetsnbextension==3.5.1  # via ipywidgets
-zipp==3.1.0               # via -r test-requirements.txt, importlib-metadata
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
