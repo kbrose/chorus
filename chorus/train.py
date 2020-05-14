@@ -1,4 +1,4 @@
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, List
 from pathlib import Path
 import math
 import warnings
@@ -44,7 +44,12 @@ class SongDataset(torch.utils.data.Dataset):
     Create a tf.data.Dataset from the given dataframe and optional
     augmenting dataframe.
     """
-    def __init__(self, df: pd.DataFrame, aug_df: Optional[pd.DataFrame]=None):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        targets: List[str],
+        aug_df: Optional[pd.DataFrame]=None,
+    ):
         """
         Inputs
         ------
@@ -68,8 +73,8 @@ class SongDataset(torch.utils.data.Dataset):
         def row_to_labels(row):
             return [row['en']] + list(map(sci2en.get, filter(len, row['also'])))
 
-        mlb = sklearn.preprocessing.MultiLabelBinarizer(TARGETS)
-        mlb.fit([])  # not needed, we passed in TARGETS as the classes
+        mlb = sklearn.preprocessing.MultiLabelBinarizer(targets)
+        mlb.fit([])  # not needed, we passed in targets as the classes
 
         labels = [row_to_labels(row) for _, row in df.iterrows()]
         self.y = mlb.transform(labels).astype(int)
@@ -125,7 +130,7 @@ class Data(NamedTuple):
     test: SongDataset
 
 
-def get_model_data() -> Data:
+def get_model_data(targets: List[str]) -> Data:
     """
     Get the training and testing data to be used for the model.
 
@@ -139,7 +144,7 @@ def get_model_data() -> Data:
     # Filter out poor quality recordings, and recordings with multiple species
     df = df.loc[
         df['q'].isin(['A', 'B', 'C'])
-        & (df['en'].isin(TARGETS))
+        & (df['en'].isin(targets))
         & (df['id'].isin(observed_ids))
         & (df['length-seconds'] > 5)
     ]
@@ -150,7 +155,8 @@ def get_model_data() -> Data:
     aug_df.drop(test_df.index, inplace=True)
 
     return Data(
-        train=SongDataset(train_df, aug_df), test=SongDataset(test_df, None),
+        train=SongDataset(train_df, targets, aug_df),
+        test=SongDataset(test_df, targets, None),
     )
 
 
@@ -199,7 +205,7 @@ def train(name: str):
     summary(model, input_size=(TRAIN_SAMPLES,))
 
     # Set up data
-    train, test = get_model_data()
+    train, test = get_model_data(TARGETS)
     print(f'Training on {len(train)} samples, testing on {len(test)} samples')
     train_dl = torch.utils.data.DataLoader(
         train, BATCH, shuffle=True, num_workers=4, pin_memory=True)

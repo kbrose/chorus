@@ -1,3 +1,4 @@
+from typing import Literal
 from pathlib import Path
 
 import torch
@@ -58,7 +59,7 @@ class Model(nn.Module):
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
 
-    def forward(self, x):
+    def forward(self, x, include_top=True):
         x = self.spectrogram(x)
         x = self.batch_norm1(x)
 
@@ -67,13 +68,16 @@ class Model(nn.Module):
         x = self.global_avg_pool(x)
         x = x.view(x.size()[0], -1)
 
-        x = F.relu(self.fc1(x), inplace=True)
-        x = self.fc2(x)
+        if include_top:
+            x = F.relu(self.fc1(x), inplace=True)
+            x = self.fc2(x)
         return x
 
 
-def load_model(filepath: Path, inference=True):
+def load_model(filepath: Path, device: Literal['cpu', 'cuda'], inference=True):
     model = Model()
     model.load_state_dict(torch.load(str(filepath)))
     if inference:
         model.eval()
+    model.to(device)
+    return model
