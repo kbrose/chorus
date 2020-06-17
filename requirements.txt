@@ -21,6 +21,7 @@ numba==0.48.0             # via librosa, resampy
 numpy==1.18.2             # via -r requirements.in, librosa, matplotlib, numba, pandas, resampy, scikit-learn, scipy
 pandas==1.0.3             # via -r requirements.in
 pillow==7.1.1             # via -r requirements.in
+prefetch-generator==1.0.1  # via -r requirements.in
 pycparser==2.20           # via cffi
 pyparsing==2.4.7          # via matplotlib
 python-dateutil==2.8.1    # via matplotlib, pandas

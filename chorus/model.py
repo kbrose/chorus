@@ -6,29 +6,22 @@ import torch.nn.functional as F
 import torch.nn as nn
 import torchaudio
 
+from .data import load_saved_xeno_canto_meta, DATA_FOLDER
 
-TARGETS = [
-    "Song Sparrow",
-    "Carolina Wren",
-    "Northern Cardinal",
-    "American Robin",
-    "Red Crossbill",
-    # "Red-winged Blackbird",
-    # "House Wren",
-    # "Bewick's Wren",
-    # "Dark-eyed Junco",
-    # "Blue Jay",
-    # "Spotted Towhee",
-    # "Tufted Titmouse",
-    # "Great Horned Owl",
-    # "Northern Saw-whet Owl",
-    # "Grey Catbird",
-    # "Northern Mockingbird",
-    # "Marsh Wren",
-    # "American Crow",
-    # "Common Yellowthroat",
-    # "Northern Raven",
+_observed_ids = [
+    f.stem for f in (DATA_FOLDER / 'xeno-canto' / 'numpy').glob('*')
 ]
+_df = load_saved_xeno_canto_meta()
+_df = _df.loc[
+    _df['q'].isin(['A', 'B', 'C'])
+    & (_df['id'].isin(_observed_ids))
+    & (_df['length-seconds'] > 5)
+]
+
+TARGETS = _df['en'].value_counts()[lambda x: x >= 50].index.tolist()
+
+del _df, _observed_ids
+
 TARGET_MAX_FREQ = 15_000  # Should be half the minimum expected sample rate
 NUM_FREQS = 257
 TARGET_STEP_IN_SECS = 0.003

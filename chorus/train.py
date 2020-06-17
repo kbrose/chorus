@@ -16,6 +16,7 @@ import torch.nn as nn
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
+from prefetch_generator import BackgroundGenerator
 
 from chorus.data import (
     DATA_FOLDER, load_saved_xeno_canto_meta, scientific_to_en
@@ -86,12 +87,12 @@ class SongDataset(torch.utils.data.Dataset):
             self.aug_y = None
 
     def load(self, xc_id: int, target_length: int) -> np.ndarray:
-        x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy')
+        x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy', mmap_mode='r')
         if x.size < target_length:
             # repeat signal to have length >= target_length
             x = np.tile(x, math.ceil(target_length / x.size))
         start = self.np_rng.randint(0, max(x.size - target_length, 1))
-        x = x[start:start + target_length]
+        x = x[start:start + target_length].copy()
         return x
 
     def __getitem__(self, index):
@@ -224,7 +225,7 @@ def train(name: str):
     for ep in range(1_000):
         with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
             model.train()
-            for i, (xb, yb) in enumerate(train_dl):
+            for i, (xb, yb) in enumerate(BackgroundGenerator(train_dl, 10)):
                 xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
                 loss = loss_fn(model(xb), yb)
@@ -253,7 +254,13 @@ def train(name: str):
             tb_writer.add_scalar('train_loss', averaged_train_loss, ep)
             model.eval()
             with torch.no_grad():
-                valid_loss = evaluate(ep, model, loss_fn, test_dl, tb_writer)
+                valid_loss = evaluate(
+                    ep,
+                    model,
+                    loss_fn,
+                    BackgroundGenerator(test_dl, 10),
+                    tb_writer
+                )
                 star = ' '
                 if valid_loss < best_valid_loss:
                     star = '*'
@@ -269,7 +276,7 @@ def train(name: str):
                     ),
                     refresh=True
                 )
-        if ((ep + 1 - best_ep) % 10) == 0:
+        if ((ep + 1 - best_ep) % 25) == 0:
             opt.param_groups[0]['lr'] /= 10
             model.load_state_dict(torch.load(
                 str(SAVED_MODELS / name / f'{best_ep:0>4}.pth')))

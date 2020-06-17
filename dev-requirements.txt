@@ -65,6 +65,7 @@ pexpect==4.8.0            # via ipython
 pickleshare==0.7.5        # via ipython
 pillow==7.1.1             # via -r requirements.txt, -r test-requirements.txt
 pluggy==0.13.1            # via -r test-requirements.txt, pytest
+prefetch-generator==1.0.1  # via -r requirements.txt
 prometheus-client==0.7.1  # via notebook
 prompt-toolkit==3.0.5     # via ipython, jupyter-console
 protobuf==3.11.3          # via tensorboard
