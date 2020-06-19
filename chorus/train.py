@@ -221,7 +221,9 @@ def train(name: str, resume: bool=False):
 
     if resume:
         filepath = max((SAVED_MODELS / name).glob('*.pth'))
-        model.load_state_dict(torch.load(filepath))
+        state = torch.load(filepath)
+        model.load_state_dict(state['model'])
+        opt.load_state_dict((state['optim']))
         is_first = False
         best_ep = int(filepath.stem)
         start_ep = best_ep + 1
@@ -231,6 +233,7 @@ def train(name: str, resume: bool=False):
         start_ep = 0
     best_valid_loss = float('inf')
     for ep in range(start_ep, 1_000):
+        is_epoch_first = True
         with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
             model.train()
             for i, (xb, yb) in enumerate(BackgroundGenerator(train_dl, 10)):
@@ -244,9 +247,11 @@ def train(name: str, resume: bool=False):
                 pbar.update()
                 curr_loss = float(loss.detach().cpu().numpy())
                 if is_first:
-                    averaged_train_loss = curr_loss
                     tb_writer.add_graph(model, xb)
                     is_first = False
+                if is_epoch_first:
+                    averaged_train_loss = curr_loss
+                    is_epoch_first = False
                 else:
                     averaged_train_loss = (
                         averaged_train_loss * 0.95 + curr_loss * 0.05
@@ -274,7 +279,11 @@ def train(name: str, resume: bool=False):
                     star = '*'
                     best_valid_loss = valid_loss
                     best_ep = ep
-                    torch.save(model.state_dict(),
+                    state = {
+                        'model': model.state_dict(),
+                        'optim': opt.state_dict(),
+                    }
+                    torch.save(state,
                                str(SAVED_MODELS / name / f'{ep:0>4}.pth'))
                 pbar.set_postfix_str(
                     postfix_str.format(
