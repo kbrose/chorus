@@ -194,7 +194,7 @@ def evaluate(
     return valid_loss
 
 
-def train(name: str):
+def train(name: str, resume: bool=False):
     """
     Train a chorus model with the given name.
     """
@@ -219,10 +219,18 @@ def train(name: str):
     tb_writer = SummaryWriter(LOGS_FOLDER / name)
     postfix_str = '{train_loss: <6} {valid_loss: <6}{star}'
 
-    is_first = True
+    if resume:
+        filepath = max((SAVED_MODELS / name).glob('*.pth'))
+        model.load_state_dict(torch.load(filepath))
+        is_first = False
+        best_ep = int(filepath.stem)
+        start_ep = best_ep + 1
+    else:
+        is_first = True
+        best_ep = 0
+        start_ep = 0
     best_valid_loss = float('inf')
-    best_ep = 0
-    for ep in range(1_000):
+    for ep in range(start_ep, 1_000):
         with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
             model.train()
             for i, (xb, yb) in enumerate(BackgroundGenerator(train_dl, 10)):
