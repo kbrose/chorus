@@ -179,10 +179,16 @@ def evaluate(
     yhats = np.stack([pt[0].cpu().numpy()[0] for pt in preds_targets])
     ys = np.stack([pt[1].cpu().numpy()[0] for pt in preds_targets])
 
+    full_f, full_ax = plt.subplots(1)
+    full_ax.set_aspect('equal')
+    full_ax.set_xlim([0, 1])
+    full_ax.set_ylim([0, 1])
+    full_ax.plot([0, 1], [0, 1], 'k--')
     for yhat, y, label in zip(yhats.T, ys.T, TARGETS):
         f, ax = plt.subplots(1)
         fpr, tpr, _ = roc_curve(y, yhat)
         ax.plot(fpr, tpr)
+        full_ax.plot(fpr, tpr, alpha=0.1)
         ax.set_aspect('equal')
         ax.set_xlim([0, 1])
         ax.set_ylim([0, 1])
@@ -190,6 +196,7 @@ def evaluate(
         auc = roc_auc_score(y, yhat)
         ax.set_title(f'{label} - AUC = {auc:.3f}')
         tb_writer.add_figure(label, f, epoch)
+    tb_writer.add_figure('all_species', full_f, epoch)
 
     return valid_loss
 
