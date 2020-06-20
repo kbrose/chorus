@@ -301,10 +301,11 @@ def train(name: str, resume: bool=False):
                     refresh=True
                 )
         if ((ep + 1 - best_ep) % 25) == 0:
+            lr = opt.param_groups[0]['lr']
             state = torch.load(str(SAVED_MODELS / name / f'{best_ep:0>4}.pth'))
             model.load_state_dict(state['model'])
             opt.load_state_dict(state['optim'])
-            opt.param_groups[0]['lr'] /= 10
+            opt.param_groups[0]['lr'] = lr / 10
             print(
                 f'lowering learning rate to {opt.param_groups[0]["lr"]}'
                 f' and resetting weights to epoch {best_ep}'
