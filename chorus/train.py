@@ -215,8 +215,16 @@ def train(name: str, resume: bool=False):
     # Set up data
     train, test = get_model_data(TARGETS)
     print(f'Training on {len(train)} samples, testing on {len(test)} samples')
+    # We do a weighted sample of the training data. For a given row,
+    # we first take the rarest class that shows up in that row, and
+    # set its weight inversely proportional to the rareness of that class.
+    train_sampler = torch.utils.data.WeightedRandomSampler(
+        weights=(train.y / train.y.sum(axis=0)[np.newaxis, :]).max(axis=1),
+        num_samples=len(train),
+        replacement=True
+    )
     train_dl = torch.utils.data.DataLoader(
-        train, BATCH, shuffle=True, num_workers=4, pin_memory=True)
+        train, BATCH, sampler=train_sampler, num_workers=4, pin_memory=True)
     test_dl = torch.utils.data.DataLoader(
         test, 1, num_workers=4, pin_memory=True)
 
