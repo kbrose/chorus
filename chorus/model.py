@@ -18,8 +18,7 @@ _df = _df.loc[
     & (_df['length-seconds'] > 5)
 ]
 
-TARGETS = _df['en'].value_counts()[lambda x: x >= 50].index.tolist()
-
+TARGETS = sorted(_df['en'].value_counts()[lambda x: x >= 50].index.tolist())
 del _df, _observed_ids
 
 TARGET_MAX_FREQ = 15_000  # Should be half the minimum expected sample rate
@@ -47,10 +46,14 @@ class Model(nn.Module):
 
         self.fc1 = nn.Linear(32, 32)
         nn.init.xavier_uniform_(self.fc1.weight)
-        self.fc2 = nn.Linear(32, len(TARGETS))
+        self.fc2 = nn.Linear(32, 64)
         nn.init.xavier_uniform_(self.fc2.weight)
+        self.fc3 = nn.Linear(64, len(TARGETS))
+        nn.init.xavier_uniform_(self.fc3.weight)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
+
+        self.targets = TARGETS
 
     def forward(self, x, include_top=True):
         x = self.spectrogram(x)
@@ -63,7 +66,8 @@ class Model(nn.Module):
 
         if include_top:
             x = F.relu(self.fc1(x), inplace=True)
-            x = self.fc2(x)
+            x = F.relu(self.fc2(x), inplace=True)
+            x = self.fc3(x)
         return x
 
 

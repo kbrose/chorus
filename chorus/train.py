@@ -238,7 +238,8 @@ def train(name: str, resume: bool=False):
         filepath = max((SAVED_MODELS / name).glob('*.pth'))
         state = torch.load(filepath)
         model.load_state_dict(state['model'])
-        opt.load_state_dict((state['optim']))
+        opt.load_state_dict(state['optim'])
+        best_valid_loss = state['best_valid_loss']
         is_first = False
         best_ep = int(filepath.stem)
         start_ep = best_ep + 1
@@ -246,7 +247,7 @@ def train(name: str, resume: bool=False):
         is_first = True
         best_ep = 0
         start_ep = 0
-    best_valid_loss = float('inf')
+        best_valid_loss = float('inf')
     for ep in range(start_ep, 1_000):
         is_epoch_first = True
         with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
@@ -297,6 +298,7 @@ def train(name: str, resume: bool=False):
                     state = {
                         'model': model.state_dict(),
                         'optim': opt.state_dict(),
+                        'best_valid_loss': best_valid_loss,
                     }
                     torch.save(state,
                                str(SAVED_MODELS / name / f'{ep:0>4}.pth'))
