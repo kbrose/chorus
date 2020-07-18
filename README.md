@@ -28,7 +28,7 @@ After reviewing, it seems like xeno-canto is a clear winner in the short term. I
 
 ### Python dependencies
 
-This code requires python >= 3.7.
+This code requires python >= 3.8.
 
 This project uses `pip-tools` to track requirements. It's recommended, but not required, to run the code.
 
