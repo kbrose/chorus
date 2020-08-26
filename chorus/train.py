@@ -2,6 +2,7 @@ from typing import NamedTuple, Optional, List
 from pathlib import Path
 import math
 import warnings
+import json
 
 import numpy as np
 import pandas as pd
@@ -231,6 +232,8 @@ def train(name: str, resume: bool=False):
     # Set up logging / saving
     (SAVED_MODELS / name).mkdir(parents=True, exist_ok=True)
     (LOGS_FOLDER / name).mkdir(parents=True, exist_ok=True)
+    with open(SAVED_MODELS / name / 'targets.json', 'w') as f:
+        json.dump(model.targets, f)
     tb_writer = SummaryWriter(LOGS_FOLDER / name)
     postfix_str = '{train_loss: <6} {valid_loss: <6}{star}'
 
