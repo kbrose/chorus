@@ -12,3 +12,4 @@ tqdm
 librosa
 scikit-learn
 prefetch_generator
+nnAudio
