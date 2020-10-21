@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-import torchaudio
+from nnAudio import Spectrogram
 
 from .data import load_saved_xeno_canto_meta, DATA_FOLDER
 
@@ -30,7 +30,7 @@ class Model(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.spectrogram = torchaudio.transforms.Spectrogram(512, 512, 45)
+        self.spectrogram = Spectrogram.STFT(n_fft=512, hop_length=45)
         self.batch_norm1 = nn.BatchNorm1d(NUM_FREQS)
 
         channels = [NUM_FREQS, 64, 32, 32, 32, 32, 32, 32, 64, 32]

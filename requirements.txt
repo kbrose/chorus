@@ -17,6 +17,7 @@ kiwisolver==1.2.0         # via matplotlib
 librosa==0.7.2            # via -r requirements.in
 llvmlite==0.31.0          # via numba
 matplotlib==3.2.1         # via -r requirements.in
+nnaudio==0.1.1            # via -r requirements.in
 numba==0.48.0             # via librosa, resampy
 numpy==1.18.2             # via -r requirements.in, librosa, matplotlib, numba, pandas, resampy, scikit-learn, scipy
 pandas==1.0.3             # via -r requirements.in

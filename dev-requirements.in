@@ -1,5 +1,4 @@
 -r requirements.txt
--r test-requirements.txt
 
 appnope  # force this to be required, otherwise mac and linux fight over it.
 mypy
