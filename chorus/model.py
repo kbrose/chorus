@@ -55,7 +55,7 @@ class Model(nn.Module):
 
         self.targets = TARGETS
 
-    def forward(self, x, include_top=True):
+    def forward(self, x):
         x = self.spectrogram(x)
         x = self.batch_norm1(x)
 
@@ -64,16 +64,15 @@ class Model(nn.Module):
         x = self.global_avg_pool(x)
         x = x.view(x.size()[0], -1)
 
-        if include_top:
-            x = F.relu(self.fc1(x), inplace=True)
-            x = F.relu(self.fc2(x), inplace=True)
-            x = self.fc3(x)
+        x = F.relu(self.fc1(x), inplace=True)
+        x = F.relu(self.fc2(x), inplace=True)
+        x = self.fc3(x)
         return x
 
 
 def load_model(filepath: Path, device: Literal['cpu', 'cuda'], inference=True):
     model = Model()
-    model.load_state_dict(torch.load(str(filepath)))
+    model.load_state_dict(torch.load(str(filepath))['model'])
     if inference:
         model.eval()
     model.to(device)
