@@ -13,3 +13,5 @@ librosa
 scikit-learn
 prefetch_generator
 nnAudio
+rasterio
+pyproj
