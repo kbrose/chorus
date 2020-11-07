@@ -35,6 +35,20 @@ def xeno_to_numpy(samplerate, reprocess: bool, verbose: bool):
     c_data.convert_to_numpy(samplerate, verbose, not reprocess)
 
 
+@data.command('range-meta', help='download range map meta data')
+@click.option('-v', '--verbose', is_flag=True, help='Show progress bar.')
+@click.option('--redownload', is_flag=True, help="Redownload all files.")
+def range_meta(redownload: bool, verbose: bool):
+    c_data.save_range_map_meta()
+
+
+@data.command('range-map', help='download range map data')
+@click.option('-v', '--verbose', is_flag=True, help='Show progress bar.')
+@click.option('--redownload', is_flag=True, help="Redownload all files.")
+def range_meta(redownload: bool, verbose: bool):
+    c_data.save_range_maps(verbose, skip_existing=not redownload)
+
+
 @cli.command(help='train the model')
 @click.argument('name', type=str)
 @click.option('--resume', is_flag=True)

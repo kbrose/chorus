@@ -6,12 +6,15 @@ import json
 import multiprocessing as mp
 import warnings
 from functools import partial
+import io
 
 import requests
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import librosa
+import rasterio
+import rasterio.windows
 
 from chorus._typing import XenoCantoRecording, XenoCantoResponse
 
@@ -204,3 +207,57 @@ def convert_to_numpy(sample_rate: int, progress=True, skip_existing=True):
         ):
             if x is not None:
                 np.save(xc_folder / 'numpy' / f'{f.stem}.npy', x)
+
+
+def save_range_map_meta():
+    """
+    Download the meta data (CSV table) for the range maps.
+    This file lets us know the URLs of the raster map images.
+    """
+    r = requests.get(
+        'https://s3-us-west-2.amazonaws.com/ebirdst-data/ebirdst_run_names.csv'
+    )
+    folder = DATA_FOLDER / 'ebird' / 'range-meta'
+    folder.mkdir(exist_ok=True, parents=True)
+    with open(folder / 'ebirdst_run_names.csv', 'w') as f:
+        f.write(r.text)
+
+
+def save_range_maps(progress=True, skip_existing=True):
+    df = pd.read_csv(
+        DATA_FOLDER / 'ebird' / 'range-meta' / 'ebirdst_run_names.csv'
+    )
+    filename = '{run}_hr_2018_occurrence_median.tif'
+    url = 'https://s3-us-west-2.amazonaws.com/ebirdst-data/{run}/results/tifs/'
+
+    folder = DATA_FOLDER / 'ebird' / 'range'
+    folder.mkdir(exist_ok=True, parents=True)
+
+    # This window into the data was found through EDA. See the
+    # notebooks/range-maps.ipynb file. Sampling the data to this
+    # window reduces the dataset size by 2 orders of magnitude (100GB to 4GB).
+    win = rasterio.windows.Window(2950, 1400, 2200, 1100)
+    for run in tqdm(df['run_name'].values, disable=not progress):
+        if skip_existing and (folder / filename.format(run=run)).exists():
+            continue
+        try:
+            full_url = url.format(run=run) + filename.format(run=run)
+            r = requests.get(full_url)
+        except requests.ConnectionError:
+            print(f'\nFailed to GET {full_url}')
+
+        # This code was adapted from the docs:
+        # https://rasterio.readthedocs.io/en/latest/topics/windowed-rw.html
+        with rasterio.open(io.BytesIO(r.content), driver='GTiff') as raster:
+            kwargs = raster.meta.copy()
+            kwargs.update({
+                'height': win.height,
+                'width': win.width,
+                'transform': rasterio.windows.transform(win, raster.transform),
+                'compress': 'deflate'
+            })
+
+            with rasterio.open(
+                folder / filename.format(run=run), 'w', **kwargs
+            ) as new_raster:
+                new_raster.write(raster.read(window=win))
