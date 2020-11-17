@@ -125,9 +125,9 @@ def load_saved_xeno_canto_meta() -> pd.DataFrame:
         with open(filepath) as f:
             metas.append(json.load(f))
     df = pd.DataFrame(metas)
-    df['lat'] = df['lat'].astype(float, errors='ignore')
-    df['lng'] = df['lng'].astype(float, errors='ignore')
-    df['alt'] = df['alt'].astype(float, errors='ignore')
+    df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+    df['lng'] = pd.to_numeric(df['lng'], errors='coerce')
+    df['alt'] = pd.to_numeric(df['alt'], errors='coerce')
     df['length-seconds'] = pd.to_timedelta(df['length'].apply(
         lambda x: '0:' + x if x.count(':') == 1 else x  # put in hour if needed
     )).dt.seconds
@@ -223,10 +223,24 @@ def save_range_map_meta():
         f.write(r.text)
 
 
-def save_range_maps(progress=True, skip_existing=True):
-    df = pd.read_csv(
+def load_range_map_meta() -> pd.DataFrame:
+    """
+    Load and return the range map information.
+    """
+    return pd.read_csv(
         DATA_FOLDER / 'ebird' / 'range-meta' / 'ebirdst_run_names.csv'
     )
+
+
+def save_range_maps(progress=True, skip_existing=True):
+    """
+    Save all of the ebird range map geoTiff files. Files will be
+    filtered to the USA to reduce the size.
+
+    You must save the range map meta data using save_range_map_meta()
+    before you run this function.
+    """
+    df = load_range_map_meta()
     filename = '{run}_hr_2018_occurrence_median.tif'
     url = 'https://s3-us-west-2.amazonaws.com/ebirdst-data/{run}/results/tifs/'
 
