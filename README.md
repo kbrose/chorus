@@ -70,7 +70,7 @@ python cli.py data xc-to-npy --help
 # First get the meta data (about 100KB)
 python cli.py data range-meta --help
 
-# Then download and process the range maps (about 10MB)
+# Then download and process the range maps (about 3GB)
 # Range maps are processed in memory and never persisted to save on space.
 python cli.py data range-map --help
 ```
