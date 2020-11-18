@@ -240,19 +240,15 @@ def load_range_map_meta() -> pd.DataFrame:
     )
 
 
-def save_range_maps(progress=True, skip_existing=True):
+def save_range_maps(progress=True):
     """
-    Save all of the ebird range map geoTiff files. Files will be
-    filtered to the USA to reduce the size.
+    Download & reformat all of the ebird range map geoTiff files.
+    The data will be massaged into a large numpy array and some meta data.
+    This massaging brings the query time down from ~1 second / species to
+    ~30ms for all 600 species, at the cost of some precision.
 
     You must save the range map meta data using save_range_map_meta()
     before you run this function.
-
-    This function uses several approaches to reduce the disk space used
-    up by the saved range maps. While this is nice in it's own right,
-    the primary purpose is to speed up reads. The optimizations here
-    speed up a query of a single lat/long point for _Spiza americana_
-    from ~900ms to ~35ms, at the cost of some precision.
 
     More info:
     https://cornelllabofornithology.github.io/ebirdst/index.html
@@ -268,40 +264,54 @@ def save_range_maps(progress=True, skip_existing=True):
     # This window into the data was found through EDA. See the
     # notebooks/range-maps.ipynb file. Sampling the data to this
     # window reduces the dataset size by 2 orders of magnitude (100GB to 4GB).
-    win = rasterio.windows.Window(2950, 1400, 2200, 1104)
-    # We down sample by a factor of 8 in each spatial dimension, further
-    # reducing the dataset size by a factor of 16.
-    down_ratio = 8
+    win = rasterio.windows.Window(2950, 1400, 2200, 1100)
+    # We down sample by a factor of 10 in each spatial dimension, further
+    # reducing the dataset size by a factor of 100. The resulting grid
+    # is squares of 15 miles x 15 miles (approximately).
+    down_ratio = 10
     if (win.height % down_ratio) or (win.width % down_ratio):
         raise ValueError(
             f'{down_ratio=} must be a factor of {win.height=} and {win.width=}'
         )
-    for run in tqdm(df['run_name'].values, disable=not progress):
-        if skip_existing and (folder / filename.format(run=run)).exists():
-            continue
-        try:
-            full_url = url.format(run=run) + filename.format(run=run)
-            r = requests.get(full_url)
-        except requests.ConnectionError:
-            print(f'\nFailed to GET {full_url}')
-            continue
+
+    # This is where we'll save the output data
+    data_out = np.zeros(
+        (df.shape[0], 52, win.height // down_ratio, win.width // down_ratio),
+        dtype='float32'
+    )
+    # These will be used to ensure that all transformations are the same
+    transform = None
+    crs = None
+    for i, run in enumerate(tqdm(df['run_name'].values, disable=not progress)):
+        for _ in range(3):
+            try:
+                full_url = url.format(run=run) + filename.format(run=run)
+                r = requests.get(full_url)
+                break
+            except requests.ConnectionError:
+                print(f'\nFailed to GET {full_url}')
+                time.sleep(2)
+                continue
+        else:
+            raise RuntimeError('Failed to download file.')
 
         # This code was adapted from the docs:
         # https://rasterio.readthedocs.io/en/latest/topics/windowed-rw.html
         with rasterio.open(io.BytesIO(r.content), driver='GTiff') as raster:
             t = rasterio.windows.transform(win, raster.transform)
-            transform = rasterio.Affine(
+            transform_new = rasterio.Affine(
                 t.a * down_ratio, t.b, t.c, t.d, t.e * down_ratio, t.f
             )
+            if transform is None:
+                transform = transform_new
+            elif transform != transform_new:
+                raise RuntimeError(f'transform for {run} does not match')
 
-            kwargs = raster.meta.copy()
-            kwargs.update({
-                'height': win.height // down_ratio,
-                'width': win.width // down_ratio,
-                'transform': transform,
-                'compress': 'deflate',
-                'dtype': 'uint8'
-            })
+            if crs is None:
+                crs = raster.crs.wkt
+            elif crs != raster.crs.wkt:
+                raise RuntimeError(f'CRS for {run} does not match')
+
             data = raster.read(window=win)
             # -inf is used for missing values (e.g. over oceans),
             # but this really screws up the averaging, especially near
@@ -317,12 +327,11 @@ def save_range_maps(progress=True, skip_existing=True):
                     ],
                     axis=0
                 )
-            # The final space saving measure us to cast the data to uint8,
-            # for a final factor of 4 (over float32, the default).
-            data = np.nan_to_num(data, nan=0.0, neginf=0.0, posinf=0.0)
-            data = (data * 255).astype('uint8')
-
-            with rasterio.open(
-                folder / filename.format(run=run), 'w', **kwargs
-            ) as new_raster:
-                new_raster.write(data)
+            data_out[i, :, :, :] = data
+    np.save(folder / 'ranges.npy', data_out)
+    with open(folder / 'meta.json', 'w') as f:
+        json.dump(f, {
+            'scientific_names': list(df['scientific_name'].values),
+            'transform': list(np.array(transform[:-3])),
+            'crs': crs
+        })

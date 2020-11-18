@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import List
+from typing import List, Dict
+import json
 
 from pyproj import Transformer
-import rasterio
-
-from .data import load_range_map_meta
+import affine
+import numpy as np
 
 
 class Presence:
@@ -12,7 +12,6 @@ class Presence:
     What are the odds that a bird is present in a location?
     """
     def __init__(self):
-        self._df = load_range_map_meta().set_index('scientific_name')
         self._folder = Path(__file__).parents[1] / 'data' / 'ebird' / 'range'
 
     @property
@@ -22,12 +21,10 @@ class Presence:
     def __call__(
         self,
         *,
-        scientific_name: str,
         lat: float,
         lng: float,
         week: int,
-        raise_on_unknown: bool=True
-    ) -> float:
+    ) -> Dict[str, float]:
         """
         Return the probability that a bird is present.
 
@@ -39,44 +36,40 @@ class Presence:
             the optimal search duration and distance that maximizes detection
             of that species in a region.
 
-            https://cornelllabofornithology.github.io/ebirdst/articles/ebirdst-introduction.html#occurrence_median
+        https://cornelllabofornithology.github.io/ebirdst/articles/ebirdst-introduction.html#occurrence_median
 
         Inputs
         ------
-        scientific_name : str
-            The scientific name of the bird. See the
-            `known_scientific_names` property for a complete list.
-            If your scientific name is not recognized, either an
-            error is raised or -1 is returned (see raise_on_unknown argument).
         lat, lng : float
             Location to query. If your location is outside the dataset,
             then 0.0 is returned by default.
         week : int
             The week number from 1 to 52 inclusive.
-        raise_on_unknown : bool
-            Whether to raise an error or return -1 when the scientific_name
-            is not in the range dataset. Default: raise an error
 
         Returns
         -------
-        probability : float
-            The probability that the bird can be observed at the given
-            location at the given time of year. Might be -1 depending on
-            the `raise_on_unknown` argument, but otherwise will be from
-            0 to 1 inclusive.
+        probabilities : Dict[str, float]
+            A map of scientific name -> probability that the bird can be
+            observed at the given location at the given time of year.
+            See above for rigorous definition of the probability.
         """
+        if not 1 <= week <= 52:
+            raise ValueError('week must be between 1 and 52 inclusive')
+
+        # "load" data from disk (use mmap to do lazy loading of range data)
+        data = np.load(self._folder / 'ranges.npy', mmap_mode='r')
+        with open(self._folder / 'meta.json') as f:
+            meta = json.load(f)
+        scientific_names = meta['scientific_names']
+
+        # lat/long -> coordinate system of raster
+        crs_transform = Transformer.from_crs("EPSG:4326", meta['crs'])
+        # coordinate system of raster -> array indices
+        raster_transform = affine.Affine(*meta['transform'])
+
         try:
-            row = self._df.loc[scientific_name]
-        except KeyError:
-            if raise_on_unknown:
-                raise
-            return -1.0
-        filename = row['run_name'] + '_hr_2018_occurrence_median.tif'
-        with rasterio.open(self._folder / filename) as raster:
-            # lat/long -> raster coordinate system
-            transform = Transformer.from_crs("EPSG:4326", raster.crs).transform
-            try:
-                value = raster.read(week)[raster.index(*transform(lat, lng))]
-            except IndexError:
-                value = 0.0
-            return value / 255
+            col, row = (~raster_transform) * crs_transform.transform(lat, lng)
+            values = data[:, week, int(row), int(col)]
+        except IndexError:
+            values = np.zeros_like(scientific_names, dtype='float32')
+        return dict(zip(scientific_names, values))
