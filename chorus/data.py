@@ -213,6 +213,10 @@ def save_range_map_meta():
     """
     Download the meta data (CSV table) for the range maps.
     This file lets us know the URLs of the raster map images.
+
+    More info:
+    https://cornelllabofornithology.github.io/ebirdst/index.html
+    Click "Introduction - Data Access and Structure" for info on the data.
     """
     r = requests.get(
         'https://s3-us-west-2.amazonaws.com/ebirdst-data/ebirdst_run_names.csv'
@@ -226,6 +230,10 @@ def save_range_map_meta():
 def load_range_map_meta() -> pd.DataFrame:
     """
     Load and return the range map information.
+
+    More info:
+    https://cornelllabofornithology.github.io/ebirdst/index.html
+    Click "Introduction - Data Access and Structure" for info on the data.
     """
     return pd.read_csv(
         DATA_FOLDER / 'ebird' / 'range-meta' / 'ebirdst_run_names.csv'
@@ -239,6 +247,16 @@ def save_range_maps(progress=True, skip_existing=True):
 
     You must save the range map meta data using save_range_map_meta()
     before you run this function.
+
+    This function uses several approaches to reduce the disk space used
+    up by the saved range maps. While this is nice in it's own right,
+    the primary purpose is to speed up reads. The optimizations here
+    speed up a query of a single lat/long point for _Spiza americana_
+    from ~900ms to ~35ms, at the cost of some precision.
+
+    More info:
+    https://cornelllabofornithology.github.io/ebirdst/index.html
+    Click "Introduction - Data Access and Structure" for info on the data.
     """
     df = load_range_map_meta()
     filename = '{run}_hr_2018_occurrence_median.tif'
@@ -250,7 +268,14 @@ def save_range_maps(progress=True, skip_existing=True):
     # This window into the data was found through EDA. See the
     # notebooks/range-maps.ipynb file. Sampling the data to this
     # window reduces the dataset size by 2 orders of magnitude (100GB to 4GB).
-    win = rasterio.windows.Window(2950, 1400, 2200, 1100)
+    win = rasterio.windows.Window(2950, 1400, 2200, 1104)
+    # We down sample by a factor of 8 in each spatial dimension, further
+    # reducing the dataset size by a factor of 16.
+    down_ratio = 8
+    if (win.height % down_ratio) or (win.width % down_ratio):
+        raise ValueError(
+            f'{down_ratio=} must be a factor of {win.height=} and {win.width=}'
+        )
     for run in tqdm(df['run_name'].values, disable=not progress):
         if skip_existing and (folder / filename.format(run=run)).exists():
             continue
@@ -259,19 +284,45 @@ def save_range_maps(progress=True, skip_existing=True):
             r = requests.get(full_url)
         except requests.ConnectionError:
             print(f'\nFailed to GET {full_url}')
+            continue
 
         # This code was adapted from the docs:
         # https://rasterio.readthedocs.io/en/latest/topics/windowed-rw.html
         with rasterio.open(io.BytesIO(r.content), driver='GTiff') as raster:
+            t = rasterio.windows.transform(win, raster.transform)
+            transform = rasterio.Affine(
+                t.a * down_ratio, t.b, t.c, t.d, t.e * down_ratio, t.f
+            )
+
             kwargs = raster.meta.copy()
             kwargs.update({
-                'height': win.height,
-                'width': win.width,
-                'transform': rasterio.windows.transform(win, raster.transform),
-                'compress': 'deflate'
+                'height': win.height // down_ratio,
+                'width': win.width // down_ratio,
+                'transform': transform,
+                'compress': 'deflate',
+                'dtype': 'uint8'
             })
+            data = raster.read(window=win)
+            # -inf is used for missing values (e.g. over oceans),
+            # but this really screws up the averaging, especially near
+            # the coast. Replace these with nan and use nanmean().
+            data = np.nan_to_num(data, nan=np.nan, neginf=np.nan)
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', 'Mean of empty slice')
+                data = np.nanmean(
+                    [
+                        data[:, i::down_ratio, j::down_ratio]
+                        for i in range(down_ratio)
+                        for j in range(down_ratio)
+                    ],
+                    axis=0
+                )
+            # The final space saving measure us to cast the data to uint8,
+            # for a final factor of 4 (over float32, the default).
+            data = np.nan_to_num(data, nan=0.0, neginf=0.0, posinf=0.0)
+            data = (data * 255).astype('uint8')
 
             with rasterio.open(
                 folder / filename.format(run=run), 'w', **kwargs
             ) as new_raster:
-                new_raster.write(raster.read(window=win))
+                new_raster.write(data)

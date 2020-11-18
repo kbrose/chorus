@@ -76,6 +76,7 @@ class Presence:
             # lat/long -> raster coordinate system
             transform = Transformer.from_crs("EPSG:4326", raster.crs).transform
             try:
-                return raster.read(week)[raster.index(*transform(lat, lng))]
+                value = raster.read(week)[raster.index(*transform(lat, lng))]
             except IndexError:
-                return 0.0
+                value = 0.0
+            return value / 255
