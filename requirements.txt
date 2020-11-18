@@ -4,15 +4,12 @@
 #
 #    pip-compile requirements.in
 #
-affine==2.3.0             # via rasterio
-attrs==20.3.0             # via rasterio
+affine==2.3.0             # via -r requirements.in
 audioread==2.1.8          # via librosa
 certifi==2020.4.5.1       # via pyproj, requests
 cffi==1.14.0              # via soundfile
 chardet==3.0.4            # via requests
-click-plugins==1.1.1      # via rasterio
-click==7.1.1              # via -r requirements.in, click-plugins, cligj, rasterio
-cligj==0.7.0              # via rasterio
+click==7.1.1              # via -r requirements.in
 cycler==0.10.0            # via matplotlib
 decorator==4.4.2          # via librosa
 idna==2.9                 # via requests
@@ -23,22 +20,20 @@ llvmlite==0.31.0          # via numba
 matplotlib==3.2.1         # via -r requirements.in
 nnaudio==0.1.1            # via -r requirements.in
 numba==0.48.0             # via librosa, resampy
-numpy==1.18.2             # via -r requirements.in, librosa, matplotlib, numba, pandas, rasterio, resampy, scikit-learn, scipy, snuggs
+numpy==1.18.2             # via -r requirements.in, librosa, matplotlib, numba, pandas, resampy, scikit-learn, scipy
 pandas==1.0.3             # via -r requirements.in
 pillow==7.1.1             # via -r requirements.in
 prefetch-generator==1.0.1  # via -r requirements.in
 pycparser==2.20           # via cffi
-pyparsing==2.4.7          # via matplotlib, snuggs
+pyparsing==2.4.7          # via matplotlib
 pyproj==3.0.0.post1       # via -r requirements.in
 python-dateutil==2.8.1    # via matplotlib, pandas
 pytz==2019.3              # via pandas
-rasterio==1.1.8           # via -r requirements.in
 requests==2.23.0          # via -r requirements.in
 resampy==0.2.2            # via librosa
 scikit-learn==0.22.2.post1  # via -r requirements.in, librosa
 scipy==1.4.1              # via librosa, resampy, scikit-learn
 six==1.14.0               # via cycler, librosa, python-dateutil, resampy
-snuggs==1.4.7             # via rasterio
 soundfile==0.10.3.post1   # via librosa
 torch==1.4.0              # via -r requirements.in, torchaudio
 torchaudio==0.4.0         # via -r requirements.in
