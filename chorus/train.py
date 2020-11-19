@@ -1,5 +1,6 @@
-from typing import NamedTuple, Optional, List
+from typing import NamedTuple, Optional, List, Any
 from pathlib import Path
+import collections
 import math
 import warnings
 import json
@@ -17,12 +18,13 @@ import torch.nn as nn
 import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
-from prefetch_generator import BackgroundGenerator
+from prefetch_generator import BackgroundGenerator as BgGenerator
 
 from chorus.data import (
     DATA_FOLDER, load_saved_xeno_canto_meta, scientific_to_en
 )
 from chorus.model import TARGETS, Model
+from chorus.range import Presence
 
 _XC_DATA_FOLDER = DATA_FOLDER / 'xeno-canto'
 LOGS_FOLDER = Path(__file__).parents[1] / 'logs'
@@ -70,10 +72,10 @@ class SongDataset(torch.utils.data.Dataset):
 
         self.np_rng = np.random.RandomState(seed=20200313)
 
-        sci2en = scientific_to_en(df)
+        sci2en = scientific_to_en(df).get
 
         def row_to_labels(row):
-            return [row['en']] + list(map(sci2en.get, filter(len, row['also'])))
+            return [row['en']] + [sci2en(x) for x in row['also'] if x]
 
         mlb = sklearn.preprocessing.MultiLabelBinarizer(targets)
         mlb.fit([])  # not needed, we passed in targets as the classes
@@ -121,7 +123,14 @@ class SongDataset(torch.utils.data.Dataset):
                     scale=x.std() * self.np_rng.random() * 0.25,
                     size=x.size,
                 )
-        return torch.as_tensor(x), torch.as_tensor(y.astype(float))
+        return (
+            (
+                torch.as_tensor(x),
+                torch.as_tensor(self.df[['lat', 'lng']].iloc[index].values),
+                torch.as_tensor(self.df['week'].iloc[index])
+            ),
+            torch.as_tensor(y.astype(float))
+        )
 
     def __len__(self):
         return self.df.shape[0]
@@ -167,18 +176,33 @@ def evaluate(
     model: nn.Module,
     loss_fn: nn.Module,
     data: torch.utils.data.DataLoader,
+    presence: Presence,
+    en2sci: Any,
     tb_writer: SummaryWriter,
 ):
-    preds_targets = [(model(x.to(DEVICE)), y) for x, y in data]
+    preds_targets = [
+        (model(x.to(DEVICE)), lat_lng, week, y)
+        for (x, lat_lng, week), y in data
+    ]
     valid_loss = torch.tensor(
-        [loss_fn(preds, y.to(DEVICE)) for preds, y in preds_targets]
+        [loss_fn(preds, y.to(DEVICE)) for preds, _, _, y in preds_targets]
     ).mean().cpu().numpy()
     valid_loss = float(valid_loss)
 
     tb_writer.add_scalar('valid_loss', valid_loss, epoch)
 
     yhats = np.stack([pt[0].cpu().numpy()[0] for pt in preds_targets])
-    ys = np.stack([pt[1].cpu().numpy()[0] for pt in preds_targets])
+    lat_lngs = np.stack([pt[1].cpu().numpy()[0] for pt in preds_targets])
+    weeks = np.stack([pt[2].cpu().numpy()[0] for pt in preds_targets])
+    ys = np.stack([pt[3].cpu().numpy()[0] for pt in preds_targets])
+
+    all_names = presence.scientific_names
+    all_probs = [
+        presence(lat=lat_lng[0], lng=lat_lng[1], week=week)
+        if (not np.isnan(lat_lng).all() and not np.isnan(week))
+        else dict(zip(all_names, np.zeros(len(all_names))))
+        for lat_lng, week in zip(lat_lngs, weeks)
+    ]
 
     full_f, full_ax = plt.subplots(1)
     full_ax.set_aspect('equal')
@@ -186,6 +210,10 @@ def evaluate(
     full_ax.set_ylim([0, 1])
     full_ax.plot([0, 1], [0, 1], 'k--')
     for yhat, y, label in zip(yhats.T, ys.T, TARGETS):
+        sciname = en2sci[label]
+        if sciname in presence.scientific_names:
+            probs = np.stack([p[sciname] for p in all_probs]).clip(0.1)
+            yhat = yhat * probs
         f, ax = plt.subplots(1)
         fpr, tpr, _ = roc_curve(y, yhat)
         ax.plot(fpr, tpr)
@@ -229,6 +257,13 @@ def train(name: str, resume: bool=False):
     test_dl = torch.utils.data.DataLoader(
         test, 1, num_workers=4, pin_memory=True)
 
+    presence = Presence()
+    en2sci = collections.defaultdict(
+        lambda: 'unknown',
+        [(y, x)
+         for x, y in scientific_to_en(load_saved_xeno_canto_meta()).items()]
+    )
+
     # Set up logging / saving
     (SAVED_MODELS / name).mkdir(parents=True, exist_ok=True)
     (LOGS_FOLDER / name).mkdir(parents=True, exist_ok=True)
@@ -255,7 +290,7 @@ def train(name: str, resume: bool=False):
         is_epoch_first = True
         with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
             model.train()
-            for i, (xb, yb) in enumerate(BackgroundGenerator(train_dl, 10)):
+            for i, ((xb, _, _), yb) in enumerate(BgGenerator(train_dl, 10)):
                 xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
                 loss = loss_fn(model(xb), yb)
@@ -290,7 +325,9 @@ def train(name: str, resume: bool=False):
                     ep,
                     model,
                     loss_fn,
-                    BackgroundGenerator(test_dl, 10),
+                    BgGenerator(test_dl, 10),
+                    presence,
+                    en2sci,
                     tb_writer
                 )
                 star = ' '

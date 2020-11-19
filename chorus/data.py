@@ -132,6 +132,8 @@ def load_saved_xeno_canto_meta() -> pd.DataFrame:
         lambda x: '0:' + x if x.count(':') == 1 else x  # put in hour if needed
     )).dt.seconds
     df['scientific-name'] = df['gen'] + ' ' + df['sp']
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    df['week'] = ((df['date'].dt.dayofyear // 7) + 1).clip(1, 52)
     return df
 
 

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict
 import json
 
 from pyproj import Transformer
@@ -14,9 +14,15 @@ class Presence:
     def __init__(self):
         self._folder = Path(__file__).parents[1] / 'data' / 'ebird' / 'range'
 
-    @property
-    def known_scientific_names(self) -> List[str]:
-        return sorted(self._df.index.tolist())
+        with open(self._folder / 'meta.json') as f:
+            meta = json.load(f)
+        self.scientific_names = meta['scientific_names']
+
+        # lat/long -> coordinate system of raster
+        transformer = Transformer.from_crs("EPSG:4326", meta['crs'])
+        self._crs_transform = transformer.transform
+        # coordinate system of raster -> array indices
+        self._raster_transform = ~affine.Affine(*meta['transform'])
 
     def __call__(
         self,
@@ -58,18 +64,11 @@ class Presence:
 
         # "load" data from disk (use mmap to do lazy loading of range data)
         data = np.load(self._folder / 'ranges.npy', mmap_mode='r')
-        with open(self._folder / 'meta.json') as f:
-            meta = json.load(f)
-        scientific_names = meta['scientific_names']
-
-        # lat/long -> coordinate system of raster
-        crs_transform = Transformer.from_crs("EPSG:4326", meta['crs'])
-        # coordinate system of raster -> array indices
-        raster_transform = affine.Affine(*meta['transform'])
 
         try:
-            col, row = (~raster_transform) * crs_transform.transform(lat, lng)
-            values = data[:, week, int(row), int(col)]
+            col, row = self._raster_transform * self._crs_transform(lat, lng)
+            values = data[:, int(week), int(row), int(col)].clip(0, 1)
+            values = np.nan_to_num(values, 0.0)
         except IndexError:
-            values = np.zeros_like(scientific_names, dtype='float32')
-        return dict(zip(scientific_names, values))
+            values = np.zeros_like(self.scientific_names, dtype='float32')
+        return dict(zip(self.scientific_names, values))
