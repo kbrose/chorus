@@ -68,7 +68,7 @@ class Presence:
 
         try:
             col, row = self._raster_transform * self._crs_transform(lat, lng)
-            values = data[:, week, int(row), int(col)]
+            values = data[:, int(week), int(row), int(col)]
         except IndexError:
             values = np.nan * np.ones(len(self.scientific_names))
         return dict(zip(self.scientific_names, values))
