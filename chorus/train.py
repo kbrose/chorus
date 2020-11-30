@@ -1,4 +1,4 @@
-from typing import NamedTuple, Optional, List, Any
+from typing import NamedTuple, Optional, List, Any, Dict
 from pathlib import Path
 import collections
 import math
@@ -177,53 +177,61 @@ def evaluate(
     loss_fn: nn.Module,
     data: torch.utils.data.DataLoader,
     presence: Presence,
+    all_probs: List[Dict[str, float]],
     en2sci: Any,
     tb_writer: SummaryWriter,
 ):
     preds_targets = [
-        (model(x.to(DEVICE)), lat_lng, week, y)
-        for (x, lat_lng, week), y in data
+        (model(x.to(DEVICE)), y) for (x, _, _), y in data
     ]
     valid_loss = torch.tensor(
-        [loss_fn(preds, y.to(DEVICE)) for preds, _, _, y in preds_targets]
+        [loss_fn(preds, y.to(DEVICE)) for preds, y in preds_targets]
     ).mean().cpu().numpy()
     valid_loss = float(valid_loss)
 
     tb_writer.add_scalar('valid_loss', valid_loss, epoch)
 
-    yhats = np.stack([pt[0].cpu().numpy()[0] for pt in preds_targets])
-    lat_lngs = np.stack([pt[1].cpu().numpy()[0] for pt in preds_targets])
-    weeks = np.stack([pt[2].cpu().numpy()[0] for pt in preds_targets])
-    ys = np.stack([pt[3].cpu().numpy()[0] for pt in preds_targets])
+    sig_fn = nn.Sigmoid()
+    yhats = np.stack([sig_fn(pt[0]).cpu().numpy()[0] for pt in preds_targets])
+    ys = np.stack([pt[1].cpu().numpy()[0] for pt in preds_targets])
 
-    all_names = presence.scientific_names
-    all_probs = [
-        presence(lat=lat_lng[0], lng=lat_lng[1], week=week)
-        if (not np.isnan(lat_lng).all() and not np.isnan(week))
-        else dict(zip(all_names, np.zeros(len(all_names))))
-        for lat_lng, week in zip(lat_lngs, weeks)
-    ]
-
-    full_f, full_ax = plt.subplots(1)
-    full_ax.set_aspect('equal')
-    full_ax.set_xlim([0, 1])
-    full_ax.set_ylim([0, 1])
-    full_ax.plot([0, 1], [0, 1], 'k--')
+    full_f, full_axs = plt.subplots(1, 2, sharex=True, sharey=True)
+    for full_ax in full_axs:
+        full_ax.set_aspect('equal')
+        full_ax.set_xlim([0, 1])
+        full_ax.set_ylim([0, 1])
+        full_ax.plot([0, 1], [0, 1], 'k--')
     for yhat, y, label in zip(yhats.T, ys.T, TARGETS):
         sciname = en2sci[label]
+        y_adjusted = [0, 1]
+        yhat_adjusted = [0, 0]
         if sciname in presence.scientific_names:
-            probs = np.stack([p[sciname] for p in all_probs]).clip(0.1)
-            yhat = yhat * probs
-        f, ax = plt.subplots(1)
+            probs = np.stack([p[sciname] for p in all_probs])
+            flt = ~np.isnan(probs)
+            if flt.any():
+                y_adjusted = y[flt]
+                yhat_adjusted = yhat[flt] * probs[flt]
+        f, axs = plt.subplots(1, 2, sharex=True, sharey=True)
+
         fpr, tpr, _ = roc_curve(y, yhat)
-        ax.plot(fpr, tpr)
-        full_ax.plot(fpr, tpr, alpha=0.1)
-        ax.set_aspect('equal')
-        ax.set_xlim([0, 1])
-        ax.set_ylim([0, 1])
-        ax.plot([0, 1], [0, 1], 'k--')
+        axs[0].plot(fpr, tpr)
         auc = roc_auc_score(y, yhat)
-        ax.set_title(f'{label} - AUC = {auc:.3f}')
+        axs[0].set_title(f'AUC = {auc:.3f}')
+        full_axs[0].plot(fpr, tpr, alpha=0.1)
+
+        fpr, tpr, _ = roc_curve(y_adjusted, yhat_adjusted)
+        axs[1].plot(fpr, tpr)
+        auc = roc_auc_score(y_adjusted, yhat_adjusted)
+        axs[1].set_title(f'AUC = {auc:.3f}')
+        full_axs[1].plot(fpr, tpr, alpha=0.1)
+
+        f.suptitle(f'{label}')
+
+        for ax in axs:
+            ax.set_aspect('equal')
+            ax.set_xlim([0, 1])
+            ax.set_ylim([0, 1])
+            ax.plot([0, 1], [0, 1], 'k--')
         tb_writer.add_figure(label, f, epoch)
     tb_writer.add_figure('all_species', full_f, epoch)
 
@@ -290,7 +298,7 @@ def train(name: str, resume: bool=False):
         is_epoch_first = True
         with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
             model.train()
-            for i, ((xb, _, _), yb) in enumerate(BgGenerator(train_dl, 10)):
+            for i, ((xb, _, _), yb) in enumerate(BgGenerator(train_dl, 24)):
                 xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
                 loss = loss_fn(model(xb), yb)
@@ -301,8 +309,9 @@ def train(name: str, resume: bool=False):
                 pbar.update()
                 curr_loss = float(loss.detach().cpu().numpy())
                 if is_first:
-                    tb_writer.add_graph(model, xb)
                     is_first = False
+                    if not resume:
+                        tb_writer.add_graph(model, xb)
                 if is_epoch_first:
                     averaged_train_loss = curr_loss
                     is_epoch_first = False
@@ -320,13 +329,28 @@ def train(name: str, resume: bool=False):
                 )
             tb_writer.add_scalar('train_loss', averaged_train_loss, ep)
             model.eval()
+            if ep == start_ep:
+                inputs = [
+                    (lat_lng, week) for (_, lat_lng, week), _ in test_dl
+                ]
+                lat_lngs = np.stack([i[0].cpu().numpy()[0] for i in inputs])
+                weeks = np.stack([i[1].cpu().numpy()[0] for i in inputs])
+                all_names = presence.scientific_names
+                all_probs = [
+                    presence(lat=lat_lng[0], lng=lat_lng[1], week=week)
+                    if (not np.isnan(lat_lng).all() and not np.isnan(week))
+                    else dict(zip(all_names, np.nan * np.zeros(len(all_names))))
+                    for lat_lng, week in zip(lat_lngs, weeks)
+                ]
+                del inputs, lat_lngs, weeks, all_names
             with torch.no_grad():
                 valid_loss = evaluate(
                     ep,
                     model,
                     loss_fn,
-                    BgGenerator(test_dl, 10),
+                    BgGenerator(test_dl, 24),
                     presence,
+                    all_probs,
                     en2sci,
                     tb_writer
                 )

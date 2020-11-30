@@ -32,7 +32,7 @@ class Presence:
         week: int,
     ) -> Dict[str, float]:
         """
-        Return the probability that a bird is present.
+        Return the probability that a bird is present, or nan if unknown.
 
         The EBird folks define this probability as follows:
 
@@ -47,10 +47,11 @@ class Presence:
         Inputs
         ------
         lat, lng : float
-            Location to query. If your location is outside the dataset,
-            then 0.0 is returned by default.
+            Location to query.
         week : int
-            The week number from 1 to 52 inclusive.
+            The week number from 1 to 52 inclusive. There are slightly more
+            than 52 weeks in a year, so make sure you handle your edge
+            cases.
 
         Returns
         -------
@@ -67,8 +68,7 @@ class Presence:
 
         try:
             col, row = self._raster_transform * self._crs_transform(lat, lng)
-            values = data[:, int(week), int(row), int(col)].clip(0, 1)
-            values = np.nan_to_num(values, 0.0)
+            values = data[:, week, int(row), int(col)]
         except IndexError:
-            values = np.zeros_like(self.scientific_names, dtype='float32')
+            values = np.nan * np.ones(len(self.scientific_names))
         return dict(zip(self.scientific_names, values))
