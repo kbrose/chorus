@@ -8,3 +8,4 @@ jupyter
 jupyterlab
 matplotlib
 tensorboard
+rasterio

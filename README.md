@@ -3,7 +3,7 @@ Determine the bird from its call
 
 ## Resources
 
-* Databases
+* Audio Databases
     * https://www.macaulaylibrary.org
         * Tons of recordings, but requires signup/license agreement.
     * https://avocet.integrativebiology.natsci.msu.edu
@@ -13,6 +13,9 @@ Determine the bird from its call
         * Full rest API offered.
         * Seems like most recordings are "only" MP3 files.
         * Recordings typically (always?) licensed under with one of the CC licenses.
+* Species range maps
+    * https://cornelllabofornithology.github.io/ebirdst/articles/ebirdst-introduction.html
+        * High quality range maps of 600 species, with a large overlap of xeno-canto species.
 
 After reviewing, it seems like xeno-canto is a clear winner in the short term. If the Macaulay Library is willing to share their data they might be a good follow up.
 
@@ -33,18 +36,15 @@ This code requires python >= 3.8.
 This project uses `pip-tools` to track requirements. It's recommended, but not required, to run the code.
 
 ```bash
-# For running the code.
+# Bare minimum for running the code.
 pip-sync requirements.txt
 # alternatively, pip install -r requirements.txt
 
-# To get packages that help with development as well:
+# To get packages needed for development / data downloading as well:
 pip-sync dev-requirements.txt
-
-# If you just want to run tests, use the following.
-pip-sync test-requirements.txt
 ```
 
-If you want to try and be looser with the package versions, you can just reference the corresponding `.in` file. But be aware that tests are only run on the specific package versions referenced in the `.txt` files.
+If you want to try and be looser with the package versions, you can just reference the corresponding `.in` file.
 
 ### ffmpeg
 
@@ -55,6 +55,7 @@ You must install `ffmpeg` for the audio loading.
 Use the command line interface. ***You'll need about 400 GB of free space and 48 hours.***
 
 ```bash
+######### For Audio
 # First get the meta data (about 200MB)
 python cli.py data xc-meta --help
 
@@ -64,4 +65,13 @@ python cli.py data xc-audio --help
 # Finally, convert audio to numpy format (about 320GB, ~24 hours)
 # This format takes up more space, but loads 800 times faster.
 python cli.py data xc-to-npy --help
+
+######### For Range maps
+# First get the meta data (about 100KB)
+python cli.py data range-meta --help
+
+# Then download and process the range maps (about 3GB)
+# Range maps are processed in memory and the full res versions
+# are never persisted to save on space.
+python cli.py data range-map --help
 ```

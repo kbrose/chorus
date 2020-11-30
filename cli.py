@@ -44,9 +44,8 @@ def range_meta(redownload: bool, verbose: bool):
 
 @data.command('range-map', help='download range map data')
 @click.option('-v', '--verbose', is_flag=True, help='Show progress bar.')
-@click.option('--redownload', is_flag=True, help="Redownload all files.")
-def range_meta(redownload: bool, verbose: bool):
-    c_data.save_range_maps(verbose, skip_existing=not redownload)
+def range_maps(verbose: bool):
+    c_data.save_range_maps(verbose)
 
 
 @cli.command(help='train the model')

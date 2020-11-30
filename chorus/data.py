@@ -125,13 +125,15 @@ def load_saved_xeno_canto_meta() -> pd.DataFrame:
         with open(filepath) as f:
             metas.append(json.load(f))
     df = pd.DataFrame(metas)
-    df['lat'] = df['lat'].astype(float, errors='ignore')
-    df['lng'] = df['lng'].astype(float, errors='ignore')
-    df['alt'] = df['alt'].astype(float, errors='ignore')
+    df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+    df['lng'] = pd.to_numeric(df['lng'], errors='coerce')
+    df['alt'] = pd.to_numeric(df['alt'], errors='coerce')
     df['length-seconds'] = pd.to_timedelta(df['length'].apply(
         lambda x: '0:' + x if x.count(':') == 1 else x  # put in hour if needed
     )).dt.seconds
     df['scientific-name'] = df['gen'] + ' ' + df['sp']
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    df['week'] = ((df['date'].dt.dayofyear // 7) + 1).clip(1, 52)
     return df
 
 
@@ -213,6 +215,10 @@ def save_range_map_meta():
     """
     Download the meta data (CSV table) for the range maps.
     This file lets us know the URLs of the raster map images.
+
+    More info:
+    https://cornelllabofornithology.github.io/ebirdst/index.html
+    Click "Introduction - Data Access and Structure" for info on the data.
     """
     r = requests.get(
         'https://s3-us-west-2.amazonaws.com/ebirdst-data/ebirdst_run_names.csv'
@@ -223,10 +229,34 @@ def save_range_map_meta():
         f.write(r.text)
 
 
-def save_range_maps(progress=True, skip_existing=True):
-    df = pd.read_csv(
+def load_range_map_meta() -> pd.DataFrame:
+    """
+    Load and return the range map information.
+
+    More info:
+    https://cornelllabofornithology.github.io/ebirdst/index.html
+    Click "Introduction - Data Access and Structure" for info on the data.
+    """
+    return pd.read_csv(
         DATA_FOLDER / 'ebird' / 'range-meta' / 'ebirdst_run_names.csv'
     )
+
+
+def save_range_maps(progress=True):
+    """
+    Download & reformat all of the ebird range map geoTiff files.
+    The data will be massaged into a large numpy array and some meta data.
+    This massaging brings the query time down from ~1 second / species to
+    ~30ms for all 600 species, at the cost of some precision.
+
+    You must save the range map meta data using save_range_map_meta()
+    before you run this function.
+
+    More info:
+    https://cornelllabofornithology.github.io/ebirdst/index.html
+    Click "Introduction - Data Access and Structure" for info on the data.
+    """
+    df = load_range_map_meta()
     filename = '{run}_hr_2018_occurrence_median.tif'
     url = 'https://s3-us-west-2.amazonaws.com/ebirdst-data/{run}/results/tifs/'
 
@@ -237,27 +267,73 @@ def save_range_maps(progress=True, skip_existing=True):
     # notebooks/range-maps.ipynb file. Sampling the data to this
     # window reduces the dataset size by 2 orders of magnitude (100GB to 4GB).
     win = rasterio.windows.Window(2950, 1400, 2200, 1100)
-    for run in tqdm(df['run_name'].values, disable=not progress):
-        if skip_existing and (folder / filename.format(run=run)).exists():
-            continue
-        try:
-            full_url = url.format(run=run) + filename.format(run=run)
-            r = requests.get(full_url)
-        except requests.ConnectionError:
-            print(f'\nFailed to GET {full_url}')
+    # We down sample by a factor of 10 in each spatial dimension, further
+    # reducing the dataset size by a factor of 100. The resulting grid
+    # is squares of 15 miles x 15 miles (approximately).
+    down_ratio = 10
+    if (win.height % down_ratio) or (win.width % down_ratio):
+        raise ValueError(
+            f'{down_ratio=} must be a factor of {win.height=} and {win.width=}'
+        )
+
+    # This is where we'll save the output data
+    data_out = np.zeros(
+        (df.shape[0], 52, win.height // down_ratio, win.width // down_ratio),
+        dtype='float32'
+    )
+    # These will be used to ensure that all transformations are the same
+    transform = None
+    crs = None
+    for i, run in enumerate(tqdm(df['run_name'].values, disable=not progress)):
+        for _ in range(3):
+            try:
+                full_url = url.format(run=run) + filename.format(run=run)
+                r = requests.get(full_url)
+                break
+            except requests.ConnectionError:
+                print(f'\nFailed to GET {full_url}')
+                time.sleep(2)
+                continue
+        else:
+            raise RuntimeError('Failed to download file.')
 
         # This code was adapted from the docs:
         # https://rasterio.readthedocs.io/en/latest/topics/windowed-rw.html
         with rasterio.open(io.BytesIO(r.content), driver='GTiff') as raster:
-            kwargs = raster.meta.copy()
-            kwargs.update({
-                'height': win.height,
-                'width': win.width,
-                'transform': rasterio.windows.transform(win, raster.transform),
-                'compress': 'deflate'
-            })
+            t = rasterio.windows.transform(win, raster.transform)
+            transform_new = rasterio.Affine(
+                t.a * down_ratio, t.b, t.c, t.d, t.e * down_ratio, t.f
+            )
+            if transform is None:
+                transform = transform_new
+            elif transform != transform_new:
+                raise RuntimeError(f'transform for {run} does not match')
 
-            with rasterio.open(
-                folder / filename.format(run=run), 'w', **kwargs
-            ) as new_raster:
-                new_raster.write(raster.read(window=win))
+            if crs is None:
+                crs = raster.crs.wkt
+            elif crs != raster.crs.wkt:
+                raise RuntimeError(f'CRS for {run} does not match')
+
+            data = raster.read(window=win)
+            # -inf is used for missing values (e.g. over oceans),
+            # but this really screws up the averaging, especially near
+            # the coast. Replace these with nan and use nanmean().
+            data = np.nan_to_num(data, nan=np.nan, neginf=np.nan)
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', 'Mean of empty slice')
+                data = np.nanmean(
+                    [
+                        data[:, i::down_ratio, j::down_ratio]
+                        for i in range(down_ratio)
+                        for j in range(down_ratio)
+                    ],
+                    axis=0
+                )
+            data_out[i, :, :, :] = data
+    np.save(folder / 'ranges.npy', data_out)
+    with open(folder / 'meta.json', 'w') as f:
+        json.dump(f, {
+            'scientific_names': list(df['scientific_name'].values),
+            'transform': list(np.array(transform[:-3])),
+            'crs': crs
+        })
