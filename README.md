@@ -31,7 +31,7 @@ After reviewing, it seems like xeno-canto is a clear winner in the short term. I
 
 ### Python dependencies
 
-This code requires python >= 3.8.
+This code requires python >= 3.9.
 
 This project uses `pip-tools` to track requirements. It's recommended, but not required, to run the code.
 
@@ -49,6 +49,24 @@ If you want to try and be looser with the package versions, you can just referen
 ### ffmpeg
 
 You must install `ffmpeg` for the audio loading.
+
+### gdal
+
+In order to process the species range maps, we use the `rasterio` package. You [need to install gdal](https://rasterio.readthedocs.io/en/latest/installation.html#linux) before installing `rasterio`.:
+
+```bash
+sudo apt-get install gdal-bin libgdal-dev
+```
+
+### llvm
+
+You may not have a compatible version of `llvm` installed. I worked around this as follows:
+
+```bash
+sudo apt-get install "llvm-10*"  # latest compatible release
+# Use llvm 10 while installing packages
+LLVM_CONFIG=llvm-config-10 pip-sync dev-requirements.txt
+```
 
 ### Getting the data
 
