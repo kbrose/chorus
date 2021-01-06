@@ -285,9 +285,9 @@ def save_range_maps(progress=True):
     transform = None
     crs = None
     for i, run in enumerate(tqdm(df['run_name'].values, disable=not progress)):
+        full_url = url.format(run=run) + filename.format(run=run)
         for _ in range(3):
             try:
-                full_url = url.format(run=run) + filename.format(run=run)
                 r = requests.get(full_url)
                 break
             except requests.ConnectionError:

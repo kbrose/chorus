@@ -1,6 +1,5 @@
-from typing import NamedTuple, Optional, List, Any, Dict
+from typing import NamedTuple, Optional, List, Dict, Tuple
 from pathlib import Path
-import collections
 import math
 import warnings
 import json
@@ -20,10 +19,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torchsummary import summary
 from prefetch_generator import BackgroundGenerator as BgGenerator
 
-from chorus.data import (
-    DATA_FOLDER, load_saved_xeno_canto_meta, scientific_to_en
-)
-from chorus.model import TARGETS, Model
+from chorus.data import DATA_FOLDER, load_saved_xeno_canto_meta
+from chorus.model import Model
 from chorus.range import Presence
 
 _XC_DATA_FOLDER = DATA_FOLDER / 'xeno-canto'
@@ -31,7 +28,7 @@ LOGS_FOLDER = Path(__file__).parents[1] / 'logs'
 SAVED_MODELS = Path(__file__).parents[1] / 'models'
 
 BATCH = 32
-SAMPLE_LEN_SECONDS = 20
+SAMPLE_LEN_SECONDS = 30
 SAMPLE_RATE = 30_000
 TRAIN_SAMPLES = SAMPLE_RATE * SAMPLE_LEN_SECONDS
 if torch.cuda.is_available():
@@ -72,12 +69,10 @@ class SongDataset(torch.utils.data.Dataset):
 
         self.np_rng = np.random.RandomState(seed=20200313)
 
-        sci2en = scientific_to_en(df).get
-
         def row_to_labels(row):
-            return [row['en']] + [sci2en(x) for x in row['also'] if x]
+            return [row['scientific-name']] + [x for x in row['also'] if x]
 
-        mlb = sklearn.preprocessing.MultiLabelBinarizer(targets)
+        mlb = sklearn.preprocessing.MultiLabelBinarizer(classes=targets)
         mlb.fit([])  # not needed, we passed in targets as the classes
 
         labels = [row_to_labels(row) for _, row in df.iterrows()]
@@ -91,9 +86,9 @@ class SongDataset(torch.utils.data.Dataset):
 
     def load(self, xc_id: int, target_length: int) -> np.ndarray:
         x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy', mmap_mode='r')
-        if x.size < target_length:
-            # repeat signal to have length >= target_length
-            x = np.tile(x, math.ceil(target_length / x.size))
+        if x.size < target_length * 2:
+            # repeat signal to have length >= target_length * 2
+            x = np.tile(x, math.ceil(target_length * 2 / x.size))
         start = self.np_rng.randint(0, max(x.size - target_length, 1))
         x = x[start:start + target_length].copy()
         return x
@@ -141,7 +136,7 @@ class Data(NamedTuple):
     test: SongDataset
 
 
-def get_model_data(targets: List[str]) -> Data:
+def get_model_data() -> Tuple[List[str], Data]:
     """
     Get the training and testing data to be used for the model.
 
@@ -152,20 +147,27 @@ def get_model_data(targets: List[str]) -> Data:
     df = load_saved_xeno_canto_meta()
     observed_ids = [f.stem for f in (_XC_DATA_FOLDER / 'numpy').glob('*')]
     aug_df = df.loc[df['id'].isin(observed_ids)].copy()
+    aug_df = aug_df.loc[
+        (aug_df['length-seconds'] > 5) & (aug_df['length-seconds'] <= 30)
+    ]
     # Filter out poor quality recordings, and recordings with multiple species
     df = df.loc[
         df['q'].isin(['A', 'B', 'C'])
-        & (df['en'].isin(targets))
         & (df['id'].isin(observed_ids))
         & (df['length-seconds'] > 5)
+        & (df['length-seconds'] <= 30)
     ]
+    targets = sorted(
+        df['scientific-name'].value_counts()[lambda x: x >= 50].index.tolist()
+    )
+    df = df.loc[df['scientific-name'].isin(targets)]
     train_df, test_df = sklearn.model_selection.train_test_split(
-        df, test_size=0.2, stratify=df['en'], random_state=20200310
+        df, test_size=0.2, stratify=df['scientific-name'], random_state=2020310
     )
 
     aug_df.drop(test_df.index, inplace=True)
 
-    return Data(
+    return targets, Data(
         train=SongDataset(train_df, targets, aug_df),
         test=SongDataset(test_df, targets, None),
     )
@@ -178,8 +180,8 @@ def evaluate(
     data: torch.utils.data.DataLoader,
     presence: Presence,
     all_probs: List[Dict[str, float]],
-    en2sci: Any,
     tb_writer: SummaryWriter,
+    targets: List[str],
 ):
     preds_targets = [
         (model(x.to(DEVICE)), y) for (x, _, _), y in data
@@ -201,12 +203,11 @@ def evaluate(
         full_ax.set_xlim([0, 1])
         full_ax.set_ylim([0, 1])
         full_ax.plot([0, 1], [0, 1], 'k--')
-    for yhat, y, label in zip(yhats.T, ys.T, TARGETS):
-        sciname = en2sci[label]
+    for yhat, y, label in zip(yhats.T, ys.T, targets):
         y_adjusted = [0, 1]
         yhat_adjusted = [0, 0]
-        if sciname in presence.scientific_names:
-            probs = np.stack([p[sciname] for p in all_probs])
+        if label in presence.scientific_names:
+            probs = np.stack([p[label] for p in all_probs])
             flt = ~np.isnan(probs)
             if flt.any():
                 y_adjusted = y[flt]
@@ -242,16 +243,12 @@ def train(name: str, resume: bool=False):
     """
     Train a chorus model with the given name.
     """
-    # Set up model and optimizations
-    model = Model()
-    model.to(DEVICE)
-    opt = torch.optim.Adam(model.parameters(), lr=0.001)
-    loss_fn = nn.BCEWithLogitsLoss()
-    summary(model, input_size=(TRAIN_SAMPLES,))
-
     # Set up data
-    train, test = get_model_data(TARGETS)
-    print(f'Training on {len(train)} samples, testing on {len(test)} samples')
+    targets, (train, test) = get_model_data()
+    print(
+        f'Training on {len(train)} samples, testing on {len(test)} samples'
+        f' from {len(targets)} distinct species.'
+    )
     # We do a weighted sample of the training data. For a given row,
     # we first take the rarest class that shows up in that row, and
     # set its weight inversely proportional to the rareness of that class.
@@ -265,12 +262,14 @@ def train(name: str, resume: bool=False):
     test_dl = torch.utils.data.DataLoader(
         test, 1, num_workers=4, pin_memory=True)
 
+    # Set up model and optimizations
+    model = Model(targets)
+    model.to(DEVICE)
+    opt = torch.optim.Adam(model.parameters(), lr=0.001)
+    loss_fn = nn.BCEWithLogitsLoss()
+    summary(model, input_size=(TRAIN_SAMPLES,))
+
     presence = Presence()
-    en2sci = collections.defaultdict(
-        lambda: 'unknown',
-        [(y, x)
-         for x, y in scientific_to_en(load_saved_xeno_canto_meta()).items()]
-    )
 
     # Set up logging / saving
     (SAVED_MODELS / name).mkdir(parents=True, exist_ok=True)
@@ -295,10 +294,11 @@ def train(name: str, resume: bool=False):
         start_ep = 0
         best_valid_loss = float('inf')
     for ep in range(start_ep, 1_000):
-        is_epoch_first = True
-        with tqdm(ascii=True, desc=f'{ep: >3}', total=len(train_dl)) as pbar:
+        is_first_epoch = True
+        with tqdm(desc=f'{ep: >3}', total=len(train_dl), ncols=80) as pbar:
             model.train()
-            for i, ((xb, _, _), yb) in enumerate(BgGenerator(train_dl, 24)):
+            averaged_train_loss = 0.0
+            for (xb, _, _), yb in BgGenerator(train_dl, 24):
                 xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
                 loss = loss_fn(model(xb), yb)
@@ -312,9 +312,9 @@ def train(name: str, resume: bool=False):
                     is_first = False
                     if not resume:
                         tb_writer.add_graph(model, xb)
-                if is_epoch_first:
+                if is_first_epoch:
                     averaged_train_loss = curr_loss
-                    is_epoch_first = False
+                    is_first_epoch = False
                 else:
                     averaged_train_loss = (
                         averaged_train_loss * 0.95 + curr_loss * 0.05
@@ -351,8 +351,8 @@ def train(name: str, resume: bool=False):
                     BgGenerator(test_dl, 24),
                     presence,
                     all_probs,
-                    en2sci,
-                    tb_writer
+                    tb_writer,
+                    targets,
                 )
                 star = ' '
                 if valid_loss < best_valid_loss:

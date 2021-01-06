@@ -4,22 +4,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from nnAudio import Spectrogram
-
-from .data import load_saved_xeno_canto_meta, DATA_FOLDER
-
-_observed_ids = [
-    f.stem for f in (DATA_FOLDER / 'xeno-canto' / 'numpy').glob('*')
-]
-_df = load_saved_xeno_canto_meta()
-_df = _df.loc[
-    _df['q'].isin(['A', 'B', 'C'])
-    & (_df['id'].isin(_observed_ids))
-    & (_df['length-seconds'] > 5)
-]
-
-TARGETS = sorted(_df['en'].value_counts()[lambda x: x >= 50].index.tolist())
-del _df, _observed_ids
+from torchaudio.transforms import Spectrogram
 
 TARGET_MAX_FREQ = 15_000  # Should be half the minimum expected sample rate
 NUM_FREQS = 257
@@ -27,10 +12,12 @@ TARGET_STEP_IN_SECS = 0.003
 
 
 class Model(nn.Module):
-    def __init__(self):
+    def __init__(self, targets):
         super().__init__()
 
-        self.spectrogram = Spectrogram.STFT(n_fft=512, hop_length=45)
+        self.spectrogram = Spectrogram(
+            n_fft=512, hop_length=45, power=1.0, normalized=True
+        )
         self.batch_norm1 = nn.BatchNorm1d(NUM_FREQS)
 
         channels = [NUM_FREQS, 64, 32, 32, 32, 32, 32, 32, 64, 32]
@@ -48,15 +35,16 @@ class Model(nn.Module):
         nn.init.xavier_uniform_(self.fc1.weight)
         self.fc2 = nn.Linear(32, 64)
         nn.init.xavier_uniform_(self.fc2.weight)
-        self.fc3 = nn.Linear(64, len(TARGETS))
+        self.fc3 = nn.Linear(64, len(targets))
         nn.init.xavier_uniform_(self.fc3.weight)
 
         self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
 
-        self.targets = TARGETS
+        self.targets = targets
 
     def forward(self, x):
         x = self.spectrogram(x)
+        x = x ** 0.1
         x = self.batch_norm1(x)
 
         for conv in self.convs:
