@@ -148,14 +148,14 @@ def get_model_data() -> Tuple[List[str], Data]:
     observed_ids = [f.stem for f in (_XC_DATA_FOLDER / 'numpy').glob('*')]
     aug_df = df.loc[df['id'].isin(observed_ids)].copy()
     aug_df = aug_df.loc[
-        (aug_df['length-seconds'] > 5) & (aug_df['length-seconds'] <= 30)
+        (aug_df['length-seconds'] >= 5) & (aug_df['length-seconds'] <= 60)
     ]
     # Filter out poor quality recordings, and recordings with multiple species
     df = df.loc[
         df['q'].isin(['A', 'B', 'C'])
         & (df['id'].isin(observed_ids))
-        & (df['length-seconds'] > 5)
-        & (df['length-seconds'] <= 30)
+        & (df['length-seconds'] >= 5)
+        & (df['length-seconds'] <= 60)
     ]
     targets = sorted(
         df['scientific-name'].value_counts()[lambda x: x >= 50].index.tolist()
@@ -298,7 +298,7 @@ def train(name: str, resume: bool=False):
         with tqdm(desc=f'{ep: >3}', total=len(train_dl), ncols=80) as pbar:
             model.train()
             averaged_train_loss = 0.0
-            for (xb, _, _), yb in BgGenerator(train_dl, 24):
+            for (xb, _, _), yb in BgGenerator(train_dl, 5):
                 xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
                 loss = loss_fn(model(xb), yb)
