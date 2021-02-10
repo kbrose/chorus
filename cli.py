@@ -50,9 +50,8 @@ def range_maps(verbose: bool):
 
 @cli.command(help='train the model')
 @click.argument('name', type=str)
-@click.option('--resume', is_flag=True)
-def train(name: str, resume: bool):
-    c_train.train(name, resume)
+def train(name: str):
+    c_train.train(name)
 
 
 if __name__ == "__main__":

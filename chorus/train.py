@@ -24,8 +24,8 @@ from chorus.model import Model
 from chorus.range import Presence
 
 _XC_DATA_FOLDER = DATA_FOLDER / 'xeno-canto'
-LOGS_FOLDER = Path(__file__).parents[1] / 'logs'
-SAVED_MODELS = Path(__file__).parents[1] / 'models'
+LOGS = Path(__file__).parents[1] / 'logs'
+MODELS = Path(__file__).parents[1] / 'models'
 
 BATCH = 32
 SAMPLE_LEN_SECONDS = 30
@@ -184,7 +184,7 @@ def evaluate(
     targets: List[str],
 ):
     preds_targets = [
-        (model(x.to(DEVICE)), y) for (x, _, _), y in data
+        (model(x.to(DEVICE))[0], y) for (x, _, _), y in data
     ]
     valid_loss = torch.tensor(
         [loss_fn(preds, y.to(DEVICE)) for preds, y in preds_targets]
@@ -211,7 +211,7 @@ def evaluate(
             flt = ~np.isnan(probs)
             if flt.any():
                 y_adjusted = y[flt]
-                yhat_adjusted = yhat[flt] * probs[flt]
+                yhat_adjusted = yhat[flt] * (probs[flt] + 0.1) / 1.1
         f, axs = plt.subplots(1, 2, sharex=True, sharey=True)
 
         fpr, tpr, _ = roc_curve(y, yhat)
@@ -239,7 +239,7 @@ def evaluate(
     return valid_loss
 
 
-def train(name: str, resume: bool=False):
+def train(name: str):
     """
     Train a chorus model with the given name.
     """
@@ -265,84 +265,65 @@ def train(name: str, resume: bool=False):
     # Set up model and optimizations
     model = Model(targets)
     model.to(DEVICE)
-    opt = torch.optim.Adam(model.parameters(), lr=0.001)
+    opt = torch.optim.Adam(model.parameters(), lr=0.01)
     loss_fn = nn.BCEWithLogitsLoss()
     summary(model, input_size=(TRAIN_SAMPLES,))
 
     presence = Presence()
 
     # Set up logging / saving
-    (SAVED_MODELS / name).mkdir(parents=True, exist_ok=True)
-    (LOGS_FOLDER / name).mkdir(parents=True, exist_ok=True)
-    with open(SAVED_MODELS / name / 'targets.json', 'w') as f:
+    (MODELS / name).mkdir(parents=True, exist_ok=True)
+    (LOGS / name).mkdir(parents=True, exist_ok=True)
+    with open(MODELS / name / 'targets.json', 'w') as f:
         json.dump(model.targets, f)
-    tb_writer = SummaryWriter(LOGS_FOLDER / name)
+    tb_writer = SummaryWriter(LOGS / name)
+    tb_writer.add_graph(model, torch.rand((1, TRAIN_SAMPLES)).to('cuda'))
     postfix_str = '{train_loss: <6} {valid_loss: <6}{star}'
 
-    if resume:
-        filepath = max((SAVED_MODELS / name).glob('*.pth'))
-        state = torch.load(filepath)
-        model.load_state_dict(state['model'])
-        opt.load_state_dict(state['optim'])
-        best_valid_loss = state['best_valid_loss']
-        is_first = False
-        best_ep = int(filepath.stem)
-        start_ep = best_ep + 1
-    else:
-        is_first = True
-        best_ep = 0
-        start_ep = 0
-        best_valid_loss = float('inf')
-    for ep in range(start_ep, 1_000):
-        is_first_epoch = True
+    model = torch.jit.script(model)
+
+    # Initializing geo presence
+    inputs = [
+        (lat_lng, week) for (_, lat_lng, week), _ in test_dl
+    ]
+    lat_lngs = np.stack([i[0].cpu().numpy()[0] for i in inputs])
+    weeks = np.stack([i[1].cpu().numpy()[0] for i in inputs])
+    all_names = presence.scientific_names
+    all_probs = [
+        presence(lat=lat_lng[0], lng=lat_lng[1], week=week)
+        if (not np.isnan(lat_lng).all() and not np.isnan(week))
+        else dict(zip(all_names, np.nan * np.zeros(len(all_names))))
+        for lat_lng, week in zip(lat_lngs, weeks)
+    ]
+    del inputs, lat_lngs, weeks, all_names
+
+    best_ep = 0
+    best_valid_loss = float('inf')
+    for ep in range(1_000):
         with tqdm(desc=f'{ep: >3}', total=len(train_dl), ncols=80) as pbar:
             model.train()
-            averaged_train_loss = 0.0
+            losses = []
             for (xb, _, _), yb in BgGenerator(train_dl, 5):
                 xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
-                loss = loss_fn(model(xb), yb)
+                opt.zero_grad()
+                y_hat, _ = model(xb)
+                loss = loss_fn(y_hat, yb)
                 loss.backward()
                 opt.step()
-                opt.zero_grad()
 
                 pbar.update()
-                curr_loss = float(loss.detach().cpu().numpy())
-                if is_first:
-                    is_first = False
-                    if not resume:
-                        tb_writer.add_graph(model, xb)
-                if is_first_epoch:
-                    averaged_train_loss = curr_loss
-                    is_first_epoch = False
-                else:
-                    averaged_train_loss = (
-                        averaged_train_loss * 0.95 + curr_loss * 0.05
-                    )
+                losses.append(float(loss.detach().cpu().numpy()))
                 pbar.set_postfix_str(
                     postfix_str.format(
-                        train_loss=round(averaged_train_loss, 4),
+                        train_loss=round(np.mean(losses), 4),
                         valid_loss='',
                         star=' '
                     ),
                     refresh=False
                 )
-            tb_writer.add_scalar('train_loss', averaged_train_loss, ep)
+            tb_writer.add_scalar('train_loss', np.mean(losses), ep)
             model.eval()
-            if ep == start_ep:
-                inputs = [
-                    (lat_lng, week) for (_, lat_lng, week), _ in test_dl
-                ]
-                lat_lngs = np.stack([i[0].cpu().numpy()[0] for i in inputs])
-                weeks = np.stack([i[1].cpu().numpy()[0] for i in inputs])
-                all_names = presence.scientific_names
-                all_probs = [
-                    presence(lat=lat_lng[0], lng=lat_lng[1], week=week)
-                    if (not np.isnan(lat_lng).all() and not np.isnan(week))
-                    else dict(zip(all_names, np.nan * np.zeros(len(all_names))))
-                    for lat_lng, week in zip(lat_lngs, weeks)
-                ]
-                del inputs, lat_lngs, weeks, all_names
             with torch.no_grad():
                 valid_loss = evaluate(
                     ep,
@@ -359,16 +340,12 @@ def train(name: str, resume: bool=False):
                     star = '*'
                     best_valid_loss = valid_loss
                     best_ep = ep
-                    state = {
-                        'model': model.state_dict(),
-                        'optim': opt.state_dict(),
-                        'best_valid_loss': best_valid_loss,
-                    }
-                    torch.save(state,
-                               str(SAVED_MODELS / name / f'{ep:0>4}.pth'))
+                    torch.jit.save(
+                        model, str(MODELS / name / f'{ep:0>4}.pth')
+                    )
                 pbar.set_postfix_str(
                     postfix_str.format(
-                        train_loss=round(averaged_train_loss, 4),
+                        train_loss=round(np.mean(losses), 4),
                         valid_loss=round(valid_loss, 4),
                         star=star
                     ),
@@ -376,9 +353,7 @@ def train(name: str, resume: bool=False):
                 )
         if ((ep + 1 - best_ep) % 25) == 0:
             lr = opt.param_groups[0]['lr']
-            state = torch.load(str(SAVED_MODELS / name / f'{best_ep:0>4}.pth'))
-            model.load_state_dict(state['model'])
-            opt.load_state_dict(state['optim'])
+            model = torch.jit.load(str(MODELS / name / f'{best_ep:0>4}.pth'))
             opt.param_groups[0]['lr'] = lr / 10
             print(
                 f'lowering learning rate to {opt.param_groups[0]["lr"]}'
