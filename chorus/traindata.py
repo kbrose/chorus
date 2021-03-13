@@ -70,7 +70,7 @@ class SongDataset(torch.utils.data.Dataset):
         if self.np_rng.random() < 1 / 32:
             aug_index = self.np_rng.randint(self.aug_df.shape[0])
             aug_row = self.aug_df.iloc[aug_index]
-            y_names = y_names + self._row_to_labels(self.aug_y[aug_index])
+            y_names = y_names + self._row_to_labels(aug_row)
             smoothing = self.np_rng.random() * 0.75
             x += self.load(aug_row["id"], self.train_samples) * smoothing
         if self.np_rng.random() < 1 / 32:
