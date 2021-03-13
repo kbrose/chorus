@@ -154,8 +154,6 @@ def model_data(train_samples: int) -> tuple[list[str], Data]:
     aug_df.drop(test_df.index, inplace=True)
 
     return targets, Data(
-        train=SongDataset(
-            train_df.sample(100), aug_df, targets, train_samples
-        ),
+        train=SongDataset(train_df, aug_df, targets, train_samples),
         test=SongDataset(test_df, None, targets, train_samples),
     )
