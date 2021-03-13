@@ -66,23 +66,13 @@ class SongDataset(torch.utils.data.Dataset):
         super().__init__()
         self.df = df
         self.aug_df = aug_df
+        self.targets = targets
 
         self.np_rng = np.random.RandomState(seed=20200313)
 
-        def row_to_labels(row):
-            return [row['scientific-name']] + [x for x in row['also'] if x]
-
-        mlb = sklearn.preprocessing.MultiLabelBinarizer(classes=targets)
-        mlb.fit([])  # not needed, we passed in targets as the classes
-
-        labels = [row_to_labels(row) for _, row in df.iterrows()]
-        self.y = mlb.transform(labels).astype(int)
-
-        if aug_df is not None:
-            aug_labels = [row_to_labels(row) for _, row in aug_df.iterrows()]
-            self.aug_y = mlb.transform(aug_labels).astype(int)
-        else:
-            self.aug_y = None
+    @staticmethod
+    def _row_to_labels(row):
+        return [row['scientific-name']] + [x for x in row['also'] if x]
 
     def load(self, xc_id: int, target_length: int) -> np.ndarray:
         x = np.load(_XC_DATA_FOLDER / 'numpy' / f'{xc_id}.npy', mmap_mode='r')
@@ -103,28 +93,32 @@ class SongDataset(torch.utils.data.Dataset):
         -------
         (input, expected_output)
         """
-        xc_id = self.df.iloc[index]['id']
+        row = self.df.iloc[index]
+        xc_id = row['id']
         x = self.load(xc_id, TRAIN_SAMPLES)
-        y = self.y[index]
+        y_names = self._row_to_labels(row)
         if self.aug_df is not None:
             if self.np_rng.random() < 1 / 32:
                 aug_index = self.np_rng.randint(self.aug_df.shape[0])
                 aug_row = self.aug_df.iloc[aug_index]
-                y = np.logical_or(self.aug_y[aug_index], y)
+                y_names = y_names + self._row_to_labels(self.aug_y[aug_index])
                 smoothing = self.np_rng.random() * 0.75
                 x += self.load(aug_row['id'], TRAIN_SAMPLES) * smoothing
-            if self.np_rng.random() < 1 / 64:
+            if self.np_rng.random() < 1 / 16:
                 x += self.np_rng.normal(
                     scale=x.std() * self.np_rng.random() * 0.25,
                     size=x.size,
                 )
+        y_names = set(y_names)
+        y = [1.0 if name in y_names else 0.0 for name in self.targets]
         return (
             (
                 torch.as_tensor(x),
                 torch.as_tensor(self.df[['lat', 'lng']].iloc[index].values),
                 torch.as_tensor(self.df['week'].iloc[index])
             ),
-            torch.as_tensor(y.astype(float))
+            torch.as_tensor(y),
+            self.targets.index(row['scientific-name'])
         )
 
     def __len__(self):
@@ -184,10 +178,10 @@ def evaluate(
     targets: List[str],
 ):
     preds_targets = [
-        (model(x.to(DEVICE))[0], y) for (x, _, _), y in data
+        (model(x.to(DEVICE))[0], y, y_ind) for (x, _, _), y, y_ind in data
     ]
     valid_loss = torch.tensor(
-        [loss_fn(preds, y.to(DEVICE)) for preds, y in preds_targets]
+        [loss_fn(preds, y.to(DEVICE)) for preds, y, _ in preds_targets]
     ).mean().cpu().numpy()
     valid_loss = float(valid_loss)
 
@@ -249,16 +243,8 @@ def train(name: str):
         f'Training on {len(train)} samples, testing on {len(test)} samples'
         f' from {len(targets)} distinct species.'
     )
-    # We do a weighted sample of the training data. For a given row,
-    # we first take the rarest class that shows up in that row, and
-    # set its weight inversely proportional to the rareness of that class.
-    train_sampler = torch.utils.data.WeightedRandomSampler(
-        weights=(train.y / train.y.sum(axis=0)[np.newaxis, :]).max(axis=1),
-        num_samples=len(train),
-        replacement=True
-    )
     train_dl = torch.utils.data.DataLoader(
-        train, BATCH, sampler=train_sampler, num_workers=4, pin_memory=True)
+        train, BATCH, num_workers=4, pin_memory=True)
     test_dl = torch.utils.data.DataLoader(
         test, 1, num_workers=4, pin_memory=True)
 
@@ -283,9 +269,7 @@ def train(name: str):
     model = torch.jit.script(model)
 
     # Initializing geo presence
-    inputs = [
-        (lat_lng, week) for (_, lat_lng, week), _ in test_dl
-    ]
+    inputs = [(lat_lng, week) for (_, lat_lng, week), _ in test_dl]
     lat_lngs = np.stack([i[0].cpu().numpy()[0] for i in inputs])
     weeks = np.stack([i[1].cpu().numpy()[0] for i in inputs])
     all_names = presence.scientific_names
@@ -303,7 +287,7 @@ def train(name: str):
         with tqdm(desc=f'{ep: >3}', total=len(train_dl), ncols=80) as pbar:
             model.train()
             losses = []
-            for (xb, _, _), yb in BgGenerator(train_dl, 5):
+            for (xb, _, _), yb, _ in BgGenerator(train_dl, 5):
                 xb, yb = xb.to(DEVICE), yb.to(DEVICE)
 
                 opt.zero_grad()
