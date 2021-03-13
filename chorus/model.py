@@ -3,16 +3,24 @@ import torch.nn as nn
 
 
 class ResLayer(nn.Module):
-    def __init__(self, c_in: int, c_out: int, kernel: int, stride: int):
+    def __init__(
+        self, c_in: int, c_out: int, kernel: int, stride: int, dilation: int
+    ):
+        assert kernel % 2, "kernel must be an odd number"
         super().__init__()
-        self.conv1 = nn.Conv1d(c_in, c_out, kernel, stride, kernel // 2)
+        self.conv1 = nn.Conv1d(
+            c_in, c_out, kernel, stride, kernel // 2 * dilation, dilation
+        )
         self.bn1 = nn.BatchNorm1d(c_out)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv1d(c_out, c_out, kernel, 1, kernel // 2)
+        self.conv2 = nn.Conv1d(
+            c_out, c_out, kernel, 1, kernel // 2 * dilation, dilation
+        )
         self.bn2 = nn.BatchNorm1d(c_out)
         if c_in != c_out or stride > 1:
             self.downsample: nn.Module = nn.Sequential(
-                nn.Conv1d(c_in, c_out, 1, stride, bias=False), nn.BatchNorm1d(c_out)
+                nn.Conv1d(c_in, c_out, 1, stride, bias=False),
+                nn.BatchNorm1d(c_out),
             )
         else:
             self.downsample = nn.Identity()
@@ -43,21 +51,30 @@ class Model(nn.Module):
         self.relu = nn.ReLU(inplace=True)
 
         channels = [8, 8, 8, 16, 16, 16, 32, 32, 32, 64, 64]
-        strides = [3, 3, 1, 3, 3, 1, 3, 3, 4, 4]
-        assert len(strides) == len(channels) - 1
+        strides = [3, 3, 1, 3, 3, 1, 3, 3, 2, 2]
+        dilations = [1, 2, 3, 1, 2, 3, 1, 2, 3, 3]
+        assert len(strides) == len(channels) - 1 == len(dilations)
         resnets = []
         for kernel in [5, 7, 9]:
             resnets.append(
                 nn.Sequential(
                     *[
-                        ResLayer(channels[i], channels[i + 1], kernel, strides[i])
+                        ResLayer(
+                            channels[i],
+                            channels[i + 1],
+                            kernel,
+                            strides[i],
+                            dilations[i],
+                        )
                         for i in range(len(strides))
                     ]
                 )
             )
         self.resnets = nn.ModuleList(resnets)
 
-        self.classifier = nn.Conv1d(channels[-1] * len(resnets), len(targets), 1, 1)
+        self.classifier = nn.Conv1d(
+            channels[-1] * len(resnets), len(targets), 1, 1
+        )
 
         self.targets = targets
 
