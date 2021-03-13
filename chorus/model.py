@@ -12,8 +12,7 @@ class ResLayer(nn.Module):
         self.bn2 = nn.BatchNorm1d(c_out)
         if c_in != c_out or stride > 1:
             self.downsample: nn.Module = nn.Sequential(
-                nn.Conv1d(c_in, c_out, 1, stride, bias=False),
-                nn.BatchNorm1d(c_out)
+                nn.Conv1d(c_in, c_out, 1, stride, bias=False), nn.BatchNorm1d(c_out)
             )
         else:
             self.downsample = nn.Identity()
@@ -48,15 +47,17 @@ class Model(nn.Module):
         assert len(strides) == len(channels) - 1
         resnets = []
         for kernel in [5, 7, 9]:
-            resnets.append(nn.Sequential(
-                *[ResLayer(channels[i], channels[i + 1], kernel, strides[i])
-                  for i in range(len(strides))]
-            ))
+            resnets.append(
+                nn.Sequential(
+                    *[
+                        ResLayer(channels[i], channels[i + 1], kernel, strides[i])
+                        for i in range(len(strides))
+                    ]
+                )
+            )
         self.resnets = nn.ModuleList(resnets)
 
-        self.classifier = nn.Conv1d(
-            channels[-1] * len(resnets), len(targets), 1, 1
-        )
+        self.classifier = nn.Conv1d(channels[-1] * len(resnets), len(targets), 1, 1)
 
         self.targets = targets
 

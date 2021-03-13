@@ -10,3 +10,4 @@ matplotlib
 tensorboard
 rasterio
 isort
+black

@@ -1,33 +1,74 @@
-from collections import defaultdict
-from pathlib import Path
-import time
-from typing import Dict, Iterable, Tuple, Optional
+import io
 import json
 import multiprocessing as mp
+import time
 import warnings
+from collections import defaultdict
 from functools import partial
-import io
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
 
-import requests
+import librosa
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-import librosa
 import rasterio
 import rasterio.windows
+import requests
+from tqdm import tqdm
+from typing_extensions import Literal, TypedDict
 
-from chorus._typing import XenoCantoRecording, XenoCantoResponse
+XenoCantoRecording = TypedDict(
+    "XenoCantoRecording",
+    {
+        "id": str,
+        "gen": str,
+        "sp": str,
+        "ssp": str,
+        "en": str,
+        "rec": str,
+        "cnt": str,
+        "loc": str,
+        "lat": str,
+        "lng": str,
+        "alt": str,
+        "type": str,
+        "url": str,
+        "file": str,
+        "file-name": str,
+        "sono": Dict[Literal["small", "med", "large", "full"], str],
+        "lic": str,
+        "q": Literal["A", "B", "C", "D", "E"],
+        "length": str,
+        "time": str,
+        "date": str,
+        "uploaded": str,
+        "also": List[str],
+        "rmk": str,
+        "bird-seen": Literal["yes", "no"],
+        "playback-used": Literal["yes", "no"],
+    },
+)
 
-DATA_FOLDER = Path(__file__).parents[1] / 'data'
+XenoCantoResponse = TypedDict(
+    "XenoCantoResponse",
+    {
+        "numRecordings": str,
+        "numSpecies": str,
+        "page": int,
+        "numPages": int,
+        "recordings": List[XenoCantoRecording],
+    },
+)
+
+
+DATA_FOLDER = Path(__file__).parents[1] / "data"
 SECONDS_BETWEEN_REQUESTS = 0.2
 XENO_CANTO_URL = (
-    'https://www.xeno-canto.org/api/2/recordings'
+    "https://www.xeno-canto.org/api/2/recordings"
     '?query=cnt:"United States"&page={page}'
 )
 
-warnings.filterwarnings(
-    'ignore', 'PySoundFile failed. Trying audioread instead.'
-)
+warnings.filterwarnings("ignore", "PySoundFile failed. Trying audioread instead.")
 
 
 def get_all_xeno_canto_meta(progress=False) -> Iterable[XenoCantoRecording]:
@@ -45,15 +86,15 @@ def get_all_xeno_canto_meta(progress=False) -> Iterable[XenoCantoRecording]:
         A dictionary with meta data on a recording from xeno-canto.
     """
     r: XenoCantoResponse = requests.get(XENO_CANTO_URL.format(page=1)).json()
-    with tqdm(total=int(r['numRecordings']), disable=not progress) as pbar:
-        for recording in r['recordings']:
+    with tqdm(total=int(r["numRecordings"]), disable=not progress) as pbar:
+        for recording in r["recordings"]:
             yield recording
             pbar.update()
-        num_pages = r['numPages']
+        num_pages = r["numPages"]
         for page in range(2, num_pages + 1):
             time.sleep(SECONDS_BETWEEN_REQUESTS)
             r = requests.get(XENO_CANTO_URL.format(page=page)).json()
-            for recording in r['recordings']:
+            for recording in r["recordings"]:
                 yield recording
                 pbar.update()
 
@@ -70,10 +111,10 @@ def save_all_xeno_canto_meta(progress=True):
     progress : bool
         Whether or not a progress bar should be displayed.
     """
-    folder = DATA_FOLDER / 'xeno-canto' / 'meta'
+    folder = DATA_FOLDER / "xeno-canto" / "meta"
     folder.mkdir(parents=True, exist_ok=True)
     for recording_meta in get_all_xeno_canto_meta(progress):
-        with open(folder / f'{recording_meta["id"]}.json', 'w') as f:
+        with open(folder / f'{recording_meta["id"]}.json', "w") as f:
             json.dump(recording_meta, f, indent=2)
 
 
@@ -90,11 +131,11 @@ def save_all_xeno_canto_audio(progress=True, skip_existing=True):
     skip_existing : bool
         If True and the audio file exists, do not re-download.
     """
-    meta_folder = DATA_FOLDER / 'xeno-canto' / 'meta'
-    meta_files = list(meta_folder.glob('*.json'))
-    audio_folder = DATA_FOLDER / 'xeno-canto' / 'audio'
+    meta_folder = DATA_FOLDER / "xeno-canto" / "meta"
+    meta_files = list(meta_folder.glob("*.json"))
+    audio_folder = DATA_FOLDER / "xeno-canto" / "audio"
     audio_folder.mkdir(parents=True, exist_ok=True)
-    audio_file_stems = [f.stem for f in audio_folder.glob('*')]
+    audio_file_stems = [f.stem for f in audio_folder.glob("*")]
     for meta_path in tqdm(meta_files, disable=not progress):
         if meta_path.stem in audio_file_stems:
             continue
@@ -102,39 +143,12 @@ def save_all_xeno_canto_audio(progress=True, skip_existing=True):
             meta = json.load(f)
         try:
             r = requests.get(f'https:{meta["file"]}')
-            filename = meta['id'] + '.' + meta['file-name'].split('.')[-1]
-            with open(audio_folder / filename, 'wb') as f:
+            filename = meta["id"] + "." + meta["file-name"].split(".")[-1]
+            with open(audio_folder / filename, "wb") as f:
                 f.write(r.content)
         except Exception as e:
             print(f'Problem downloading id {meta["id"]}: {e}')
         time.sleep(SECONDS_BETWEEN_REQUESTS)
-
-
-def load_saved_xeno_canto_meta() -> pd.DataFrame:
-    """
-    Load the previously saved xeno-canto meta data.
-
-    Returns
-    -------
-    df : pd.DataFrame
-        The lightly processed dataframe obtained from the JSON files.
-    """
-    folder = DATA_FOLDER / 'xeno-canto' / 'meta'
-    metas = []
-    for filepath in folder.glob('*.json'):
-        with open(filepath) as f:
-            metas.append(json.load(f))
-    df = pd.DataFrame(metas)
-    df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-    df['lng'] = pd.to_numeric(df['lng'], errors='coerce')
-    df['alt'] = pd.to_numeric(df['alt'], errors='coerce')
-    df['length-seconds'] = pd.to_timedelta(df['length'].apply(
-        lambda x: '0:' + x if x.count(':') == 1 else x  # put in hour if needed
-    )).dt.seconds
-    df['scientific-name'] = df['gen'] + ' ' + df['sp']
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    df['week'] = ((df['date'].dt.dayofyear // 7) + 1).clip(1, 52)
-    return df
 
 
 def scientific_to_en(df: pd.DataFrame) -> Dict[str, str]:
@@ -155,11 +169,11 @@ def scientific_to_en(df: pd.DataFrame) -> Dict[str, str]:
         Maps scientific names to english names.
     """
     mapping = (
-        df.drop_duplicates(subset=['scientific-name'])
-        .set_index('scientific-name')['en']
+        df.drop_duplicates(subset=["scientific-name"])
+        .set_index("scientific-name")["en"]
         .to_dict()
     )
-    return defaultdict(lambda: 'unknown', mapping)
+    return defaultdict(lambda: "unknown", mapping)
 
 
 def _load_audio(file: Path, sr: int) -> Tuple[Path, Optional[np.ndarray]]:
@@ -169,7 +183,7 @@ def _load_audio(file: Path, sr: int) -> Tuple[Path, Optional[np.ndarray]]:
     try:
         return file, librosa.load(file, sr=sr)[0]
     except Exception as e:
-        print(f'Exception with file {file}: {e}', flush=True)
+        print(f"Exception with file {file}: {e}", flush=True)
         return file, None
 
 
@@ -190,13 +204,13 @@ def convert_to_numpy(sample_rate: int, progress=True, skip_existing=True):
         If True, skip the saving of audio files which already have a
         corresponding file in the `numpy/` folder.
     """
-    xc_folder = DATA_FOLDER / 'xeno-canto'
-    (xc_folder / 'numpy').mkdir(exist_ok=True, parents=True)
-    files = list((xc_folder / 'audio').glob('*'))
+    xc_folder = DATA_FOLDER / "xeno-canto"
+    (xc_folder / "numpy").mkdir(exist_ok=True, parents=True)
+    files = list((xc_folder / "audio").glob("*"))
     total = len(files)
     initial = 0
     if skip_existing:
-        done = set(f.stem for f in (xc_folder / 'numpy').glob('*'))
+        done = set(f.stem for f in (xc_folder / "numpy").glob("*"))
         files = [f for f in files if f.stem not in done]
         initial = len(done)
     with mp.Pool() as pool:
@@ -205,10 +219,10 @@ def convert_to_numpy(sample_rate: int, progress=True, skip_existing=True):
             total=total,
             initial=initial,
             smoothing=0.025,
-            disable=not progress
+            disable=not progress,
         ):
             if x is not None:
-                np.save(xc_folder / 'numpy' / f'{f.stem}.npy', x)
+                np.save(xc_folder / "numpy" / f"{f.stem}.npy", x)
 
 
 def save_range_map_meta():
@@ -221,11 +235,11 @@ def save_range_map_meta():
     Click "Introduction - Data Access and Structure" for info on the data.
     """
     r = requests.get(
-        'https://s3-us-west-2.amazonaws.com/ebirdst-data/ebirdst_run_names.csv'
+        "https://s3-us-west-2.amazonaws.com/ebirdst-data/ebirdst_run_names.csv"
     )
-    folder = DATA_FOLDER / 'ebird' / 'range-meta'
+    folder = DATA_FOLDER / "ebird" / "range-meta"
     folder.mkdir(exist_ok=True, parents=True)
-    with open(folder / 'ebirdst_run_names.csv', 'w') as f:
+    with open(folder / "ebirdst_run_names.csv", "w") as f:
         f.write(r.text)
 
 
@@ -237,9 +251,7 @@ def load_range_map_meta() -> pd.DataFrame:
     https://cornelllabofornithology.github.io/ebirdst/index.html
     Click "Introduction - Data Access and Structure" for info on the data.
     """
-    return pd.read_csv(
-        DATA_FOLDER / 'ebird' / 'range-meta' / 'ebirdst_run_names.csv'
-    )
+    return pd.read_csv(DATA_FOLDER / "ebird" / "range-meta" / "ebirdst_run_names.csv")
 
 
 def save_range_maps(progress=True):
@@ -257,10 +269,10 @@ def save_range_maps(progress=True):
     Click "Introduction - Data Access and Structure" for info on the data.
     """
     df = load_range_map_meta()
-    filename = '{run}_hr_2018_occurrence_median.tif'
-    url = 'https://s3-us-west-2.amazonaws.com/ebirdst-data/{run}/results/tifs/'
+    filename = "{run}_hr_2018_occurrence_median.tif"
+    url = "https://s3-us-west-2.amazonaws.com/ebirdst-data/{run}/results/tifs/"
 
-    folder = DATA_FOLDER / 'ebird' / 'range'
+    folder = DATA_FOLDER / "ebird" / "range"
     folder.mkdir(exist_ok=True, parents=True)
 
     # This window into the data was found through EDA. See the
@@ -273,33 +285,33 @@ def save_range_maps(progress=True):
     down_ratio = 10
     if (win.height % down_ratio) or (win.width % down_ratio):
         raise ValueError(
-            f'{down_ratio=} must be a factor of {win.height=} and {win.width=}'
+            f"{down_ratio=} must be a factor of {win.height=} and {win.width=}"
         )
 
     # This is where we'll save the output data
     data_out = np.zeros(
         (df.shape[0], 52, win.height // down_ratio, win.width // down_ratio),
-        dtype='float32'
+        dtype="float32",
     )
     # These will be used to ensure that all transformations are the same
     transform = None
     crs = None
-    for i, run in enumerate(tqdm(df['run_name'].values, disable=not progress)):
+    for i, run in enumerate(tqdm(df["run_name"].values, disable=not progress)):
         full_url = url.format(run=run) + filename.format(run=run)
         for _ in range(3):
             try:
                 r = requests.get(full_url)
                 break
             except requests.ConnectionError:
-                print(f'\nFailed to GET {full_url}')
+                print(f"\nFailed to GET {full_url}")
                 time.sleep(2)
                 continue
         else:
-            raise RuntimeError('Failed to download file.')
+            raise RuntimeError("Failed to download file.")
 
         # This code was adapted from the docs:
         # https://rasterio.readthedocs.io/en/latest/topics/windowed-rw.html
-        with rasterio.open(io.BytesIO(r.content), driver='GTiff') as raster:
+        with rasterio.open(io.BytesIO(r.content), driver="GTiff") as raster:
             t = rasterio.windows.transform(win, raster.transform)
             transform_new = rasterio.Affine(
                 t.a * down_ratio, t.b, t.c, t.d, t.e * down_ratio, t.f
@@ -307,12 +319,12 @@ def save_range_maps(progress=True):
             if transform is None:
                 transform = transform_new
             elif transform != transform_new:
-                raise RuntimeError(f'transform for {run} does not match')
+                raise RuntimeError(f"transform for {run} does not match")
 
             if crs is None:
                 crs = raster.crs.wkt
             elif crs != raster.crs.wkt:
-                raise RuntimeError(f'CRS for {run} does not match')
+                raise RuntimeError(f"CRS for {run} does not match")
 
             data = raster.read(window=win)
             # -inf is used for missing values (e.g. over oceans),
@@ -320,20 +332,23 @@ def save_range_maps(progress=True):
             # the coast. Replace these with nan and use nanmean().
             data = np.nan_to_num(data, nan=np.nan, neginf=np.nan)
             with warnings.catch_warnings():
-                warnings.filterwarnings('ignore', 'Mean of empty slice')
+                warnings.filterwarnings("ignore", "Mean of empty slice")
                 data = np.nanmean(
                     [
                         data[:, i::down_ratio, j::down_ratio]
                         for i in range(down_ratio)
                         for j in range(down_ratio)
                     ],
-                    axis=0
+                    axis=0,
                 )
             data_out[i, :, :, :] = data
-    np.save(folder / 'ranges.npy', data_out)
-    with open(folder / 'meta.json', 'w') as f:
-        json.dump(f, {
-            'scientific_names': list(df['scientific_name'].values),
-            'transform': list(np.array(transform[:-3])),
-            'crs': crs
-        })
+    np.save(folder / "ranges.npy", data_out)
+    with open(folder / "meta.json", "w") as f:
+        json.dump(
+            f,
+            {
+                "scientific_names": list(df["scientific_name"].values),
+                "transform": list(np.array(transform[:-3])),
+                "crs": crs,
+            },
+        )
