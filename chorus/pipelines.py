@@ -15,7 +15,8 @@ import requests
 from tqdm import tqdm
 from typing_extensions import Literal, TypedDict
 
-from chorus.data import DATA_FOLDER, range_map_meta
+from chorus import metadata
+from chorus.config import DATA_FOLDER
 
 SECONDS_BETWEEN_REQUESTS = 0.2
 XENO_CANTO_URL = (
@@ -230,7 +231,7 @@ def save_range_maps(progress=True):
     https://cornelllabofornithology.github.io/ebirdst/index.html
     Click "Introduction - Data Access and Structure" for info on the data.
     """
-    df = range_map_meta()
+    df = metadata.range_map()
     filename = "{run}_hr_2018_occurrence_median.tif"
     url = "https://s3-us-west-2.amazonaws.com/ebirdst-data/{run}/results/tifs/"
 

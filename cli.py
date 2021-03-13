@@ -2,6 +2,7 @@ import click
 
 from chorus import pipelines
 from chorus import train as c_train
+from chorus.config import SAMPLE_RATE
 
 
 @click.group()
@@ -28,17 +29,20 @@ def xeno_audio(verbose: bool, redownload: bool):
 
 
 @data.command("xc-to-npy", help="convert audio to .npy data at [SAMPLERATE]")
-@click.argument("samplerate", type=int)
+@click.option(
+    "--samplerate",
+    type=int,
+    default=SAMPLE_RATE,
+    help="Edit chorus/config.py if you change this value!",
+)
 @click.option("--reprocess", is_flag=True, help="Reprocess all audio.")
 @click.option("-v", "--verbose", is_flag=True, help="Show progress bar.")
-def xeno_to_numpy(samplerate, reprocess: bool, verbose: bool):
+def xeno_to_numpy(samplerate: int, reprocess: bool, verbose: bool):
     pipelines.convert_to_numpy(samplerate, verbose, not reprocess)
 
 
 @data.command("range-meta", help="download range map meta data")
-@click.option("-v", "--verbose", is_flag=True, help="Show progress bar.")
-@click.option("--redownload", is_flag=True, help="Redownload all files.")
-def range_meta(redownload: bool, verbose: bool):
+def range_meta():
     pipelines.save_range_map_meta()
 
 
