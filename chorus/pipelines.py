@@ -3,22 +3,27 @@ import json
 import multiprocessing as mp
 import time
 import warnings
-from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import librosa
 import numpy as np
-import pandas as pd
 import rasterio
 import rasterio.windows
 import requests
 from tqdm import tqdm
 from typing_extensions import Literal, TypedDict
 
-XenoCantoRecording = TypedDict(
-    "XenoCantoRecording",
+from chorus.data import DATA_FOLDER, range_map_meta
+
+SECONDS_BETWEEN_REQUESTS = 0.2
+XENO_CANTO_URL = (
+    "https://www.xeno-canto.org/api/2/recordings"
+    '?query=cnt:"United States"&page={page}'
+)
+_XenoCantoRecording = TypedDict(
+    "_XenoCantoRecording",
     {
         "id": str,
         "gen": str,
@@ -48,30 +53,23 @@ XenoCantoRecording = TypedDict(
         "playback-used": Literal["yes", "no"],
     },
 )
-
-XenoCantoResponse = TypedDict(
-    "XenoCantoResponse",
+_XenoCantoResponse = TypedDict(
+    "_XenoCantoResponse",
     {
         "numRecordings": str,
         "numSpecies": str,
         "page": int,
         "numPages": int,
-        "recordings": List[XenoCantoRecording],
+        "recordings": List[_XenoCantoRecording],
     },
 )
 
-
-DATA_FOLDER = Path(__file__).parents[1] / "data"
-SECONDS_BETWEEN_REQUESTS = 0.2
-XENO_CANTO_URL = (
-    "https://www.xeno-canto.org/api/2/recordings"
-    '?query=cnt:"United States"&page={page}'
+warnings.filterwarnings(
+    "ignore", "PySoundFile failed. Trying audioread instead."
 )
 
-warnings.filterwarnings("ignore", "PySoundFile failed. Trying audioread instead.")
 
-
-def get_all_xeno_canto_meta(progress=False) -> Iterable[XenoCantoRecording]:
+def get_all_xeno_canto_meta(progress=False) -> Iterable[_XenoCantoRecording]:
     """
     Get all the meta data for USA-based recordings on xeno-canto.
 
@@ -82,10 +80,10 @@ def get_all_xeno_canto_meta(progress=False) -> Iterable[XenoCantoRecording]:
 
     Yields
     ------
-    recording : XenoCantoRecording
+    recording : _XenoCantoRecording
         A dictionary with meta data on a recording from xeno-canto.
     """
-    r: XenoCantoResponse = requests.get(XENO_CANTO_URL.format(page=1)).json()
+    r: _XenoCantoResponse = requests.get(XENO_CANTO_URL.format(page=1)).json()
     with tqdm(total=int(r["numRecordings"]), disable=not progress) as pbar:
         for recording in r["recordings"]:
             yield recording
@@ -149,31 +147,6 @@ def save_all_xeno_canto_audio(progress=True, skip_existing=True):
         except Exception as e:
             print(f'Problem downloading id {meta["id"]}: {e}')
         time.sleep(SECONDS_BETWEEN_REQUESTS)
-
-
-def scientific_to_en(df: pd.DataFrame) -> Dict[str, str]:
-    """
-    Create mapping of scientific name to english name.
-
-    If the mapping is not known, defaults to the string 'unknown'
-
-    Inputs
-    ------
-    df : pd.DataFrame
-        Must have columns 'scientific-name' and 'en'.
-        Typically, this will be the output of `load_saved_xeno_canto_meta`.
-
-    Returns
-    -------
-    mapping : Dict[str, str]
-        Maps scientific names to english names.
-    """
-    mapping = (
-        df.drop_duplicates(subset=["scientific-name"])
-        .set_index("scientific-name")["en"]
-        .to_dict()
-    )
-    return defaultdict(lambda: "unknown", mapping)
 
 
 def _load_audio(file: Path, sr: int) -> Tuple[Path, Optional[np.ndarray]]:
@@ -243,17 +216,6 @@ def save_range_map_meta():
         f.write(r.text)
 
 
-def load_range_map_meta() -> pd.DataFrame:
-    """
-    Load and return the range map information.
-
-    More info:
-    https://cornelllabofornithology.github.io/ebirdst/index.html
-    Click "Introduction - Data Access and Structure" for info on the data.
-    """
-    return pd.read_csv(DATA_FOLDER / "ebird" / "range-meta" / "ebirdst_run_names.csv")
-
-
 def save_range_maps(progress=True):
     """
     Download & reformat all of the ebird range map geoTiff files.
@@ -268,7 +230,7 @@ def save_range_maps(progress=True):
     https://cornelllabofornithology.github.io/ebirdst/index.html
     Click "Introduction - Data Access and Structure" for info on the data.
     """
-    df = load_range_map_meta()
+    df = range_map_meta()
     filename = "{run}_hr_2018_occurrence_median.tif"
     url = "https://s3-us-west-2.amazonaws.com/ebirdst-data/{run}/results/tifs/"
 
