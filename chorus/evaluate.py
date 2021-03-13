@@ -67,7 +67,7 @@ def evaluate(
         ax.set_title(label)
         ax.set_xlim([0, 1])
         ax.set_ylim([0, 1])
-        ax.legend()
+        ax.legend(loc="lower right")
         ax.plot([0, 1], [0, 1], "k--")
         tb_writer.add_figure(f"roc/{label}", f, epoch)
 
@@ -81,11 +81,15 @@ def evaluate(
         pure_ranks.append((yhat > yhat[idx]).sum())
         adjusted_ranks.append((yhat_adjusted > yhat_adjusted[idx]).sum())
 
-    f, axs = plt.subplots(2, 1, sharex=True, sharey=True)
-    axs[0].set_title("Unadjusted ranks")
-    axs[0].hist(pure_ranks)
-    axs[1].set_title("Ranks adjusted by geo prob")
-    axs[1].hist(adjusted_ranks)
+    # TODO: cumulative along bottom
+    f, ax = plt.subplots(1, sharex=True, sharey=True)
+    ax.set_title("Ranks")
+    worst_rank = max(max(pure_ranks), max(adjusted_ranks)) + 1
+    ax.hist(pure_ranks, bins=range(worst_rank), label="Model ranks", alpha=0.5)
+    ax.hist(
+        adjusted_ranks, bins=range(worst_rank), label="Geo adjusted", alpha=0.5
+    )
+    ax.legend(loc="upper right")
     tb_writer.add_figure("ranks", f, epoch)
 
     return valid_loss
