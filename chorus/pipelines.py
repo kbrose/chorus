@@ -4,9 +4,9 @@ import multiprocessing as mp
 import time
 import warnings
 from functools import partial
+from itertools import chain
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
-from itertools import chain
 
 import librosa
 import numpy as np

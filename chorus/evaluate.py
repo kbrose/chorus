@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from sklearn.metrics import roc_auc_score, roc_curve
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
-import numpy as np
 
 from chorus.config import DEVICE
 

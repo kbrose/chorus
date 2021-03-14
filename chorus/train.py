@@ -122,12 +122,12 @@ def train(name: str):
                     ),
                     refresh=True,
                 )
-        if ((ep + 1 - best_ep) % 15) == 0:
+        if ((ep + 1 - best_ep) % 5) == 0:
             lr = opt.param_groups[0]["lr"]
             checkpoint = torch.load(str(MODELS / name / f"{best_ep:0>4}.pth"))
             model.load_state_dict(checkpoint["model"])
             opt.load_state_dict(checkpoint["opt"])
-            opt.param_groups[0]["lr"] = lr / 10
+            opt.param_groups[0]["lr"] = lr / 2
             print(
                 f'lowering learning rate to {opt.param_groups[0]["lr"]}'
                 f" and resetting weights to epoch {best_ep}"

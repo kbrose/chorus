@@ -48,6 +48,7 @@ class Model(nn.Module):
         self.init_conv = nn.Conv1d(1, 8, 7, 5)
         self.init_bn = nn.BatchNorm1d(8)
         self.init_maxpool = nn.MaxPool1d(2, 1)
+        self.dropout = nn.Dropout()
         self.relu = nn.ReLU(inplace=True)
 
         channels = [8, 8, 8, 16, 16, 16, 32, 32, 32, 64, 64]
@@ -89,7 +90,7 @@ class Model(nn.Module):
 
         ys = []
         for resnet in self.resnets:
-            ys.append(resnet(x))
+            ys.append(self.dropout(resnet(x)))
 
         y = torch.cat(ys, dim=1)
         logits = self.classifier(y)
