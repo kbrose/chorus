@@ -52,6 +52,17 @@ def range_maps(verbose: bool):
     pipelines.save_range_maps(verbose)
 
 
+@data.command("background", help="download background audio files")
+@click.option(
+    "--samplerate",
+    type=int,
+    default=SAMPLE_RATE,
+    help="Edit chorus/config.py if you change this value!",
+)
+def background(samplerate: int):
+    pipelines.save_background_sounds(samplerate)
+
+
 @cli.command(help="train the model")
 @click.argument("name", type=str)
 def train(name: str):

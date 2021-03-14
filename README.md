@@ -92,4 +92,7 @@ python cli.py data range-meta --help
 # Range maps are processed in memory and the full res versions
 # are never persisted to save on space.
 python cli.py data range-map --help
+
+######### For background (ambient) noise to augment (200MB)
+python cli.py data background
 ```

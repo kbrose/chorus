@@ -1,12 +1,14 @@
 import io
 import json
 import multiprocessing as mp
+import random
 import time
 import warnings
 from functools import partial
 from itertools import chain
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+from tempfile import TemporaryDirectory
 
 import librosa
 import numpy as np
@@ -319,3 +321,56 @@ def save_range_maps(progress=True):
                 "crs": crs,
             },
         )
+
+
+def save_background_sounds(sample_rate: int):
+    folder = DATA_FOLDER / "background"
+
+    def download(filename_template, urls):
+        for i, url in enumerate(urls):
+            with TemporaryDirectory() as tmpdir:
+                filepath = Path(tmpdir) / "tmp.mp3"
+                with open(filepath, "wb") as f:
+                    f.write(requests.get(url).content)
+                    time.sleep(1.5 + random.random())
+                x = librosa.load(filepath, sr=sample_rate)[0]
+            np.save(folder / filename_template.format(i), x)
+
+    sounds = {
+        "wind": [
+            "http://www.soundgator.com/adata/510.mp3",
+            "http://www.soundgator.com/adata/467.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-344-audio/344_audio_arctic_wind_filtered_rumble_006.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-41945/zapsplat_nature_wind_blustery_trees_against_house_distant_surf_balcolny_46210.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-four/nature_wind_trees_strong_park_traffic_in_background.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-felix-blume/felix_blume_nature_wind_strong_blowing_through_grass_patagonian_plain.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-four/ambience_city_london_uk_park_millbank_gardens_001.mp3",
+        ],
+        "city": [
+            "http://www.soundgator.com/adata/460.mp3",
+            "http://www.soundgator.com/adata/454.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-four/ambience_city_london_uk_sirens_distant_constant_construction_pounding_wind_trees.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-four/ambience_city_london_uk_sirens_distant_constant_construction_pounding_wind_trees.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-the-sound-pack-tree/tspt_calm_town_background_traffic_loop_015.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-pmsfx/PM_Spain_Alicante_Night_Plaza_De_La_Puerta_De_San_Francisco_Binaural_LoopSeamlessly_264.mp3",
+        ],
+        "running-water": [
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-felix-blume/felix_blume_nature_water_brook_close_up.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-one/water_stream_waterfall_small_mountain_001.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-one/water_stream_waterfall_small_mountain_003.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-kevin-boucher/kevin_boucher_nature_creek_small_wate_tumbling_over_limestone_rock.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-blastwave-fx/Blastwave_FX_LakeShore_BW.61003.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-55112/zapsplat_nature_creek_fast_flowing_60m_below_australia_55314.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-adam-a-johnson/aaj_0795_MtStrmRush01.mp3",
+        ],
+        "machinery": [
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-55112/zapsplat_industrial_grass_mower_buggy_commercial_cutting_grass_distant_then_close_002_56463.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-free-to-use-sounds/ftus_vehicles_helicopter_military_eurocopter_AS332_super_puma_fly_overhead.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-10157/zapsplat_transport_helicopter_pass_overhead_10989.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-your-free-sounds/yfs_excavators_contruction_site_idles_9624_186.mp3",
+            "https://www.zapsplat.com/wp-content/uploads/2015/sound-effects-your-free-sounds/yfs_excavators_contruction_site_moving_digging_9624_185.mp3",
+        ],
+    }
+
+    for name, urls in sounds.items():
+        download(name + "-{}.npy", urls)
