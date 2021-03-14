@@ -18,7 +18,7 @@ from chorus.geo import Presence
 from chorus.model import Model
 from chorus.traindata import model_data
 
-BATCH = 32
+BATCH = 128
 SAMPLE_LEN_SECONDS = 15
 TRAIN_SAMPLES = SAMPLE_RATE * SAMPLE_LEN_SECONDS
 
