@@ -3,7 +3,7 @@ Determine the bird from its call.
 
 ## Performance
 
-(Performance data as of commit a2c8f1afa72e1e49528478c4067c093d4a981a80)
+(Performance data as of commit [a2c8f1afa7](https://github.com/kbrose/chorus/commit/a2c8f1afa72e1e49528478c4067c093d4a981a80).)
 
 The current model uses a resnet-style architecture on the raw audio waveform (sampled at 30,000 Hz).
 
