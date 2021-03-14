@@ -6,6 +6,7 @@ import warnings
 from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+from itertools import chain
 
 import librosa
 import numpy as np
@@ -134,10 +135,13 @@ def save_all_xeno_canto_audio(progress=True, skip_existing=True):
     meta_files = list(meta_folder.glob("*.json"))
     audio_folder = DATA_FOLDER / "xeno-canto" / "audio"
     audio_folder.mkdir(parents=True, exist_ok=True)
-    audio_file_stems = [f.stem for f in audio_folder.glob("*")]
+    numpy_folder = DATA_FOLDER / "xeno-canto" / "numpy"
+    existing_files = set(
+        f.stem for f in chain(audio_folder.glob("*"), numpy_folder.glob("*"))
+    )
+    if skip_existing:
+        meta_files = [f for f in meta_files if f.stem not in existing_files]
     for meta_path in tqdm(meta_files, disable=not progress):
-        if meta_path.stem in audio_file_stems:
-            continue
         with open(meta_path) as f:
             meta = json.load(f)
         try:
