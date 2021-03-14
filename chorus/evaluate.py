@@ -71,7 +71,10 @@ def evaluate(
         ax.plot([0, 1], [0, 1], "k--")
         tb_writer.add_figure(f"roc/{label}", f, epoch)
 
+    full_axs[0].set_title("no geo")
+    full_axs[1].set_title("w/ geo")
     tb_writer.add_figure("roc/all_species", full_f, epoch)
+
     pure_ranks = []
     adjusted_ranks = []
     for yhat, yhat_adjusted, w in zip(
@@ -81,15 +84,36 @@ def evaluate(
         pure_ranks.append((yhat > yhat[idx]).sum())
         adjusted_ranks.append((yhat_adjusted > yhat_adjusted[idx]).sum())
 
-    # TODO: cumulative along bottom
-    f, ax = plt.subplots(1, sharex=True, sharey=True)
+    f, axs = plt.subplots(2, 1, sharex=True)
     ax.set_title("Ranks")
     worst_rank = max(max(pure_ranks), max(adjusted_ranks)) + 1
-    ax.hist(pure_ranks, bins=range(worst_rank), label="Model ranks", alpha=0.5)
-    ax.hist(
+    axs[0].hist(
+        pure_ranks, bins=range(worst_rank), label="Model ranks", alpha=0.5
+    )
+    axs[0].hist(
         adjusted_ranks, bins=range(worst_rank), label="Geo adjusted", alpha=0.5
     )
-    ax.legend(loc="upper right")
+    axs[0].legend(loc="upper right")
+    axs[1].hist(
+        pure_ranks,
+        bins=range(worst_rank),
+        label="Model ranks",
+        cumulative=True,
+        density=True,
+        histtype="step",
+    )
+    axs[1].hist(
+        adjusted_ranks,
+        bins=range(worst_rank),
+        label="Geo adjusted",
+        cumulative=True,
+        density=True,
+        histtype="step",
+    )
+    axs[0].legend(loc="upper right")
+    axs[0].grid()
+    axs[1].grid()
+    axs[0].set_xlim([-1, 26])
     tb_writer.add_figure("ranks", f, epoch)
 
     return valid_loss
