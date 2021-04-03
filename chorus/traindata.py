@@ -50,6 +50,7 @@ class SongDataset(torch.utils.data.Dataset):
         self.is_train = aug_df is not None
         self.targets = targets
         self.train_samples = train_samples
+        self.background_files = list((DATA_FOLDER / "background").glob("*"))
 
         self.np_rng = np.random.RandomState(seed=20200313)
 
@@ -78,6 +79,23 @@ class SongDataset(torch.utils.data.Dataset):
                 scale=x.std() * self.np_rng.random() * 0.25,
                 size=x.size,
             )
+        if self.np_rng.random() < 1 / 32:
+            background = np.load(
+                self.np_rng.choice(self.background_files), mmap_mode="r"
+            ) * (self.np_rng.random() / 2 + 0.05)
+            if background.size < x.size:
+                # Add fade in / fade out
+                background[: background.size // 10] *= np.linspace(
+                    0, 1, background.size // 10, endpoint=False
+                )
+                background[-background.size // 10 :] *= np.linspace(
+                    1, 0, background.size // 10, endpoint=False
+                )
+                start = self.np_rng.randint(x.size - background.size)
+                x[start : start + background.size] += background
+            else:
+                start = self.np_rng.randint(background.size - x.size)
+                x += background[start : start + x.size]
         return x, y_names
 
     def __getitem__(self, index):
