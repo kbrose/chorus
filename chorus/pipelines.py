@@ -143,17 +143,25 @@ def save_all_xeno_canto_audio(progress=True, skip_existing=True):
     )
     if skip_existing:
         meta_files = [f for f in meta_files if f.stem not in existing_files]
-    for meta_path in tqdm(meta_files, disable=not progress):
-        with open(meta_path) as f:
-            meta = json.load(f)
-        try:
-            r = requests.get(f'https:{meta["file"]}')
-            filename = meta["id"] + "." + meta["file-name"].split(".")[-1]
-            with open(audio_folder / filename, "wb") as f:
-                f.write(r.content)
-        except Exception as e:
-            print(f'Problem downloading id {meta["id"]}: {e}')
-        time.sleep(SECONDS_BETWEEN_REQUESTS)
+    skipped = 0
+    with tqdm(total=len(meta_files), disable=not progress, ncols=80) as pbar:
+        for meta_path in meta_files:
+            pbar.update()
+            with open(meta_path) as f:
+                meta = json.load(f)
+            # Some files have restricted access. Skip these.
+            if not meta["file-name"]:
+                skipped += 1
+                pbar.set_postfix_str(f"skipped = {skipped}")
+                continue
+            try:
+                r = requests.get(f'https:{meta["file"]}')
+                filename = meta["id"] + "." + meta["file-name"].split(".")[-1]
+                with open(audio_folder / filename, "wb") as f:
+                    f.write(r.content)
+            except Exception as e:
+                print(f'Problem downloading id {meta["id"]}: {e}')
+            time.sleep(SECONDS_BETWEEN_REQUESTS)
 
 
 def _load_audio(file: Path, sr: int) -> Tuple[Path, Optional[np.ndarray]]:
