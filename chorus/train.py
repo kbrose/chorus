@@ -15,7 +15,7 @@ from tqdm import tqdm
 from chorus.config import DEVICE, SAMPLE_RATE
 from chorus.evaluate import evaluate
 from chorus.geo import Presence
-from chorus.model import Model
+from chorus.model import Classifier
 from chorus.traindata import model_data
 
 BATCH = 128
@@ -42,7 +42,7 @@ def train(name: str):
     test_dl = torch.utils.data.DataLoader(test, 1, pin_memory=True)
 
     # Set up model and optimizations
-    model = Model(targets).to(DEVICE)
+    model = Classifier(targets).to(DEVICE)
     opt = torch.optim.Adam(model.parameters(), lr=0.01)
     loss_fn = nn.BCEWithLogitsLoss(reduction="none")
     summary(model, input_size=(TRAIN_SAMPLES,))

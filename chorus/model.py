@@ -1,3 +1,7 @@
+import json
+import math
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 
@@ -39,7 +43,7 @@ class ResLayer(nn.Module):
         return self.relu(x)
 
 
-class Model(nn.Module):
+class Classifier(nn.Module):
     def __init__(self, targets):
         super().__init__()
 
@@ -96,3 +100,58 @@ class Model(nn.Module):
         logits = self.classifier(y)
 
         return torch.mean(logits, dim=2), logits
+
+
+def load_classifier(folder: Path, filename: str = None) -> nn.Module:
+    with open(folder / "targets.json") as f:
+        targets = json.load(f)
+    classifier = Classifier(targets)
+    if filename is None:
+        filename = max([f.name for f in folder.glob("*.pth")])
+    state_dict = torch.load(folder / filename)
+    classifier.load_state_dict(state_dict["model"])
+    return classifier
+
+
+def firwin(n, pass_lo, pass_hi, fs):
+    """
+    Returns a bandpass filter letting through the specified frequencies.
+
+    >>> import torch
+    >>> import numpy as np
+    >>> import scipy.signal
+    >>> fs = 22500
+    >>> x = np.random.default_rng(1234).random(300_000)
+    >>> x_torch = torch.from_numpy(x).float()[None, None, :]
+    >>> filt_torch = firwin(255, 500, 8000, fs)[None, None, :]
+    >>> filtered_torch = torch.nn.functional.conv1d(x_torch, filt_torch)[0, 0]
+    >>> filt = scipy.signal.firwin(255, [500, 8000], fs=fs, pass_zero=False)
+    >>> filtered = scipy.signal.convolve(x, filt, 'valid', 'direct')
+    >>> diff = torch.from_numpy(filtered).float() - filtered_torch
+    >>> assert diff.abs().max() < 1e-3
+    """
+    # Adapated from scipy, this is a simplified version of their firwin().
+    if not n % 2 or n <= 10:
+        raise ValueError("n must be odd and greater than 10")
+
+    # Build hamming window
+    fac = torch.linspace(-math.pi, math.pi, n)
+    hamming_alpha = 0.54  # no idea where this comes from
+    win = torch.ones(n) * hamming_alpha
+    win = win + (1 - hamming_alpha) * torch.cos(fac)
+
+    # Build up the coefficients.
+    alpha = 0.5 * (n - 1)
+    m = torch.arange(0, n) - alpha
+    left = pass_lo * 2 / fs
+    right = pass_hi * 2 / fs
+    h = right * torch.sinc(right * m) - left * torch.sinc(left * m)
+
+    # Modulate coefficients by the window
+    coefficients = h * win
+    return coefficients
+
+
+class Isolator(nn.Module):
+    def __init__(self, targets: list[str]):
+        pass

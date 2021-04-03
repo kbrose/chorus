@@ -7,8 +7,8 @@ import warnings
 from functools import partial
 from itertools import chain
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
 from tempfile import TemporaryDirectory
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import librosa
 import numpy as np
