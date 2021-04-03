@@ -48,7 +48,7 @@ def evaluate(
         full_ax.plot([0, 1], [0, 1], "k--")
     for yhat, y, label in zip(yhats.T, ys.T, targets):
         probs = np.stack([p[label] for p in all_probs])
-        yhat_adjusted = yhat * (probs + 0.1) / 1.1
+        yhat_adjusted = yhat * (probs * 0.9 + 0.1)
         yhats_adjusted.append(yhat_adjusted)
         f, ax = plt.subplots(1)
 
