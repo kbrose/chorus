@@ -3,6 +3,7 @@ import math
 from pathlib import Path
 
 import torch
+from torch._C import Value
 import torch.nn as nn
 
 
@@ -162,18 +163,80 @@ def firwin(n, pass_lo, pass_hi):
 
     # Build up the coefficients.
     alpha = 0.5 * (n - 1)
-    m = torch.arange(0, n) - alpha
-    lo = pass_lo * 2
-    hi = pass_hi * 2
-    h_hi = hi[:, None] * torch.sinc(hi[:, None] @ m[None, :])
-    h_lo = lo[:, None] * torch.sinc(lo[:, None] @ m[None, :])
-    h = h_hi - h_lo
+    m = (torch.arange(0, n) - alpha)[None, :].to(pass_lo.device)
+    lo = (pass_lo * 2)[:, None]
+    hi = (pass_hi * 2)[:, None]
+    h = hi * torch.sinc(hi @ m) - lo * torch.sinc(lo @ m)
 
     # Modulate coefficients by the window
-    coefficients = h * win[None, :]
+    coefficients = h * win[None, :].to(h.device)
     return coefficients
 
 
 class Isolator(nn.Module):
     def __init__(self, targets: list[str]):
-        pass
+        super().__init__()
+
+        self.identity = torch.nn.Identity()  # used for better summary
+
+        channels = [1, 2, 4, 4, 8, 8, 16, 32]
+        strides = [2, 2, 1, 2, 2, 1, 2]
+        dilations = [1, 2, 2, 1, 2, 2, 1]
+        assert len(strides) == len(channels) - 1 == len(dilations)
+        self.resnet = nn.Sequential(
+            *[
+                ResLayer(
+                    channels[i],
+                    channels[i + 1],
+                    5,
+                    strides[i],
+                    dilations[i],
+                )
+                for i in range(len(strides))
+            ]
+        )
+        self.n = len(targets)
+        self.regressor = nn.Conv1d(channels[-1], self.n * 3, 1, 1)
+        self.sigmoid = nn.Sigmoid()
+
+        self.targets = targets
+
+    def forward(self, x, target_inds=None):
+        x_original = x
+        x = x.unsqueeze(1)
+        x = self.identity(x)
+
+        x = self.resnet(x)
+        x = self.sigmoid(self.regressor(x))
+        x = x.reshape(x_original.shape[0], -1, self.n, 3)
+
+        if target_inds is None:
+            target_inds = torch.arange(self.n)
+        y = torch.zeros(
+            (x_original.shape[0], len(target_inds), x_original.shape[1]),
+            device=x.device,
+        )
+        for i in target_inds:
+            for j in range(x_original.shape[0]):
+                bandpass_lo = x[j, :, i, 0] * 0.5
+                # In order to ensure bandpass_hi > bandpass_lo, we put it
+                # in terms of bandpass_lo + (a value guaranteed to be >= 0).
+                bandpass_hi = bandpass_lo + x[j, :, i, 1] * (0.5 - bandpass_lo)
+                filters = firwin(255, bandpass_lo, bandpass_hi)
+                filters = nn.functional.interpolate(
+                    filters.T[None, :, :],
+                    size=x_original.shape[1],
+                    mode="nearest",
+                )[0]
+
+                y[j, i, :] = (x_original[j] * filters).sum(dim=0)
+
+                volume = nn.functional.interpolate(
+                    x[j, :, i, 2][None, None, :],
+                    size=x_original.shape[1],
+                    mode="linear",
+                    align_corners=False,
+                )[0, 0]
+                y[j, i, :] *= volume
+
+        return y
