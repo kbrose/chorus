@@ -117,7 +117,7 @@ typing-extensions==3.7.4.3
     # via
     #   -r requirements.in
     #   torch
-urllib3==1.26.3
+urllib3==1.26.4
     # via requests
 
 # The following packages are considered to be unsafe in a requirements file:
