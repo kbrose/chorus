@@ -113,9 +113,27 @@ def load_classifier(folder: Path, filename: str = None) -> nn.Module:
     return classifier
 
 
-def firwin(n, pass_lo, pass_hi, fs):
+def firwin(n, pass_lo, pass_hi):
     """
-    Returns a bandpass filter letting through the specified frequencies.
+    Returns bandpass filters letting through the specified frequencies.
+
+    Inputs
+    ------
+    n : int
+        Order of the filter.
+    pass_lo, pass_hi : array[float]
+        Both are m-length arrays of floats, defining the low and high ends
+        of the pass-through bands. One filter will be returned for each
+        element of these arrays.
+        Should be normalized: divide the desired frequency by the sample rate.
+        YOU must make sure that 0 <= pass_lo[i] < pass_hi[i] < 0.5 for all i
+
+    Returns
+    -------
+    filters : array[float]
+        A 2d array of shape (len(pass_lo), n).
+        filters[i] is the filter corresponding to the pass-through band
+        (pass_lo[i], pass_hi[i])
 
     >>> import torch
     >>> import numpy as np
@@ -123,14 +141,16 @@ def firwin(n, pass_lo, pass_hi, fs):
     >>> fs = 22500
     >>> x = np.random.default_rng(1234).random(300_000)
     >>> x_torch = torch.from_numpy(x).float()[None, None, :]
-    >>> filt_torch = firwin(255, 500, 8000, fs)[None, None, :]
+    >>> pass_lo, pass_hi = torch.tensor([500]) / fs, torch.tensor([8000]) / fs
+    >>> filt_torch = firwin(255, pass_lo, pass_hi)[0][None, None, :]
     >>> filtered_torch = torch.nn.functional.conv1d(x_torch, filt_torch)[0, 0]
     >>> filt = scipy.signal.firwin(255, [500, 8000], fs=fs, pass_zero=False)
     >>> filtered = scipy.signal.convolve(x, filt, 'valid', 'direct')
     >>> diff = torch.from_numpy(filtered).float() - filtered_torch
     >>> assert diff.abs().max() < 1e-3
     """
-    # Adapated from scipy, this is a simplified version of their firwin().
+    # Adapated from scipy, this is a simplified version of their firwin(),
+    # except that it handles arrays of pass_lo and pass_hi
     if not n % 2 or n <= 10:
         raise ValueError("n must be odd and greater than 10")
 
@@ -143,12 +163,14 @@ def firwin(n, pass_lo, pass_hi, fs):
     # Build up the coefficients.
     alpha = 0.5 * (n - 1)
     m = torch.arange(0, n) - alpha
-    left = pass_lo * 2 / fs
-    right = pass_hi * 2 / fs
-    h = right * torch.sinc(right * m) - left * torch.sinc(left * m)
+    lo = pass_lo * 2
+    hi = pass_hi * 2
+    h_hi = hi[:, None] * torch.sinc(hi[:, None] @ m[None, :])
+    h_lo = lo[:, None] * torch.sinc(lo[:, None] @ m[None, :])
+    h = h_hi - h_lo
 
     # Modulate coefficients by the window
-    coefficients = h * win
+    coefficients = h * win[None, :]
     return coefficients
 
 
