@@ -202,6 +202,8 @@ class Isolator(nn.Module):
         self.targets = targets
 
     def forward(self, x, target_inds=None):
+        filter_order = 255
+
         x_original = x
         x = x.unsqueeze(1)
         x = self.identity(x)
@@ -222,14 +224,18 @@ class Isolator(nn.Module):
                 # In order to ensure bandpass_hi > bandpass_lo, we put it
                 # in terms of bandpass_lo + (a value guaranteed to be >= 0).
                 bandpass_hi = bandpass_lo + x[j, :, i, 1] * (0.5 - bandpass_lo)
-                filters = firwin(255, bandpass_lo, bandpass_hi)
+                filters = firwin(filter_order, bandpass_lo, bandpass_hi)
                 filters = nn.functional.interpolate(
                     filters.T[None, :, :],
                     size=x_original.shape[1],
                     mode="nearest",
-                )[0]
+                )[0].T
 
-                y[j, i, :] = (x_original[j] * filters).sum(dim=0)
+                buffered_x = torch.nn.functional.pad(
+                    x_original[j], (filter_order // 2, filter_order // 2)
+                )
+                buffered_x = buffered_x.unfold(0, filter_order, 1)
+                y[j, i, :] = (buffered_x * filters).sum(dim=1)
 
                 volume = nn.functional.interpolate(
                     x[j, :, i, 2][None, None, :],
