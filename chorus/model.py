@@ -204,45 +204,44 @@ class Isolator(nn.Module):
     def forward(self, x, target_inds=None):
         filter_order = 255
 
-        x_original = x
-        x = x.unsqueeze(1)
-        x = self.identity(x)
+        y = x.unsqueeze(1)
+        y = self.identity(y)
 
-        x = self.resnet(x)
-        x = self.sigmoid(self.regressor(x))
-        x = x.reshape(x_original.shape[0], -1, self.n, 3)
+        y = self.resnet(y)
+        y = self.sigmoid(self.regressor(y))
+        y = y.reshape(x.shape[0], -1, self.n, 3)
 
         if target_inds is None:
             target_inds = torch.arange(self.n)
-        y = torch.zeros(
-            (x_original.shape[0], len(target_inds), x_original.shape[1]),
+        isolated = torch.zeros(
+            (x.shape[0], len(target_inds), x.shape[1]),
             device=x.device,
         )
         for i in target_inds:
-            for j in range(x_original.shape[0]):
-                bandpass_lo = x[j, :, i, 0] * 0.5
+            for j in range(x.shape[0]):
+                bandpass_lo = y[j, :, i, 0] * 0.5
                 # In order to ensure bandpass_hi > bandpass_lo, we put it
                 # in terms of bandpass_lo + (a value guaranteed to be >= 0).
-                bandpass_hi = bandpass_lo + x[j, :, i, 1] * (0.5 - bandpass_lo)
+                bandpass_hi = bandpass_lo + y[j, :, i, 1] * (0.5 - bandpass_lo)
                 filters = firwin(filter_order, bandpass_lo, bandpass_hi)
                 filters = nn.functional.interpolate(
-                    filters.T[None, :, :],
-                    size=x_original.shape[1],
-                    mode="nearest",
+                    filters.T[None, :, :], size=x.shape[1], mode="nearest"
                 )[0].T
 
                 buffered_x = torch.nn.functional.pad(
-                    x_original[j], (filter_order // 2, filter_order // 2)
-                )
-                buffered_x = buffered_x.unfold(0, filter_order, 1)
-                y[j, i, :] = (buffered_x * filters).sum(dim=1)
+                    x[j], (filter_order // 2, filter_order // 2)
+                ).unfold(0, filter_order, 1)
+                isolated[j, i, :] = (buffered_x * filters).sum(dim=1)
 
                 volume = nn.functional.interpolate(
-                    x[j, :, i, 2][None, None, :],
-                    size=x_original.shape[1],
+                    y[j, :, i, 2][None, None, :],
+                    size=x.shape[1],
                     mode="linear",
                     align_corners=False,
                 )[0, 0]
-                y[j, i, :] *= volume
+                isolated[j, i, :] *= volume
 
-        return y
+                # Squeeze any sort of memory we can
+                del bandpass_lo, bandpass_hi, filters, buffered_x
+
+        return isolated
