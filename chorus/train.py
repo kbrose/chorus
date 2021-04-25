@@ -19,6 +19,7 @@ from chorus.models import Classifier, Isolator, load_classifier
 from chorus.traindata import model_data
 
 BATCH_CLASSIFIER = 128
+BATCH_ISOLATOR = 128
 SAMPLE_LEN_SECONDS = 15
 TRAIN_SAMPLES = SAMPLE_RATE * SAMPLE_LEN_SECONDS
 
@@ -142,7 +143,7 @@ def train_isolator(name: str, classifier_filepath: str):
         f" from {len(targets)} distinct species."
     )
     train_dl = torch.utils.data.DataLoader(
-        train, 1, shuffle=True, pin_memory=True
+        train, BATCH_ISOLATOR, shuffle=True, pin_memory=True
     )
     test_dl = torch.utils.data.DataLoader(test, 1, pin_memory=True)
 
@@ -170,22 +171,41 @@ def train_isolator(name: str, classifier_filepath: str):
     torch.autograd.set_detect_anomaly(True)
     best_ep = 0
     best_valid_metric = float("inf")
+
     for ep in range(150):
         with tqdm(desc=f"{ep: >3}", total=len(train_dl), ncols=80) as pbar:
             isolator.train()
             losses = []
+            counter = 0
             for xb, yb, _ in BgGenerator(train_dl, 5):
+                counter += 1
                 xb = xb.to(DEVICE)
-
+                loss = torch.tensor(0.0, device=DEVICE)
                 opt.zero_grad()
-                target_inds = torch.where(yb[0])[0]
-                xb_isolated = isolator(xb, target_inds=target_inds)
-                y_hat = classifier(xb_isolated[0])[0]
-                y = torch.zeros((len(target_inds), yb.shape[1])).to(DEVICE)
-                for i, ind in enumerate(target_inds):
-                    y[i, ind] = 1.0
-                loss = loss_fn(y_hat, y)
-                # breakpoint()
+                for x, y in zip(xb, yb):
+                    target_inds = torch.where(y)[0]
+                    xb_isolated = isolator(
+                        x.unsqueeze(0), target_inds=target_inds
+                    )
+                    # y_hat = predictions from classifier for each isolated
+                    # audio stream from the original (single) audio stream
+                    y_hat = classifier(xb_isolated[0])[0]
+                    # y_act = one-hot-encoded targets, if the isolator was
+                    # trying to isolate some bird B, then we want the
+                    # classifier to only predict bird B.
+                    y_act = torch.zeros(
+                        (len(target_inds), y.shape[0]), device=DEVICE
+                    )
+                    for i, ind in enumerate(target_inds):
+                        y_act[i, ind] = 1.0
+                    loss += loss_fn(y_hat, y_act)
+                # average the losses from the batch and apply optimizer
+                # even though we only run isolator(x) on single vectors x,
+                # we apply the optimizer across a batch of losses to keep
+                # it smoothed out. Doing this actually decouples the GPU
+                # memory usage from how many examples each weight update sees,
+                # and I'm wondering if anyone else has done this before?
+                loss = loss / xb.shape[0]
                 loss.backward()
                 opt.step()
 
