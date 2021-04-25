@@ -63,10 +63,22 @@ def background(samplerate: int):
     pipelines.save_background_sounds(samplerate)
 
 
-@cli.command(help="train the model")
+@cli.group(help="subcommands to train models")
+def train():
+    pass
+
+
+@train.command(help="train the classifier model")
 @click.argument("name", type=str)
-def train(name: str):
-    c_train.train(name)
+def classifier(name: str):
+    c_train.train_classifier(name)
+
+
+@train.command(help="train the isolator model")
+@click.argument("name", type=str)
+@click.argument("classifier_filepath", type=str)
+def isolator(name: str, classifier_filepath: str):
+    c_train.train_isolator(name, classifier_filepath)
 
 
 if __name__ == "__main__":

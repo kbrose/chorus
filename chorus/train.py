@@ -15,10 +15,10 @@ from tqdm import tqdm
 from chorus.config import DEVICE, SAMPLE_RATE
 from chorus.evaluate import evaluate
 from chorus.geo import Presence
-from chorus.model import Classifier
+from chorus.models import Classifier, Isolator, load_classifier
 from chorus.traindata import model_data
 
-BATCH = 128
+BATCH_CLASSIFIER = 128
 SAMPLE_LEN_SECONDS = 15
 TRAIN_SAMPLES = SAMPLE_RATE * SAMPLE_LEN_SECONDS
 
@@ -26,7 +26,7 @@ LOGS = Path(__file__).parents[1] / "logs"
 MODELS = Path(__file__).parents[1] / "models"
 
 
-def train(name: str):
+def train_classifier(name: str):
     """
     Train a chorus model with the given name.
     """
@@ -37,7 +37,7 @@ def train(name: str):
         f" from {len(targets)} distinct species."
     )
     train_dl = torch.utils.data.DataLoader(
-        train, BATCH, shuffle=True, pin_memory=True
+        train, BATCH_CLASSIFIER, shuffle=True, pin_memory=True
     )
     test_dl = torch.utils.data.DataLoader(test, 1, pin_memory=True)
 
@@ -48,11 +48,11 @@ def train(name: str):
     summary(model, input_size=(TRAIN_SAMPLES,))
 
     # Set up logging / saving
-    (MODELS / name).mkdir(parents=True, exist_ok=True)
-    (LOGS / name).mkdir(parents=True, exist_ok=True)
-    with open(MODELS / name / "targets.json", "w") as f:
+    (MODELS / "classifier" / name).mkdir(parents=True, exist_ok=True)
+    (LOGS / "classifier" / name).mkdir(parents=True, exist_ok=True)
+    with open(MODELS / "classifier" / name / "targets.json", "w") as f:
         json.dump(model.targets, f)
-    tb_writer = SummaryWriter(LOGS / name)
+    tb_writer = SummaryWriter(LOGS / "classifier" / name)
     tb_writer.add_graph(model, torch.rand((1, TRAIN_SAMPLES)).to("cuda"))
     postfix_str = "{train_loss: <6.4f} {valid_loss: <6.4f}{star}"
 
@@ -132,3 +132,71 @@ def train(name: str):
                 f'lowering learning rate to {opt.param_groups[0]["lr"]}'
                 f" and resetting weights to epoch {best_ep}"
             )
+
+
+def train_isolator(name: str, classifier_filepath: str):
+    # Set up data
+    targets, (train, test) = model_data(TRAIN_SAMPLES)
+    print(
+        f"Training on {len(train)} samples, testing on {len(test)} samples"
+        f" from {len(targets)} distinct species."
+    )
+    train_dl = torch.utils.data.DataLoader(
+        train, 1, shuffle=True, pin_memory=True
+    )
+    test_dl = torch.utils.data.DataLoader(test, 1, pin_memory=True)
+
+    # Set up model and optimizations
+    classifier = load_classifier(
+        Path(classifier_filepath).parent, Path(classifier_filepath).name
+    ).to(DEVICE)
+    for param in classifier.parameters():
+        param.requires_grad = False
+    classifier.eval()
+    isolator = Isolator(targets).to(DEVICE)
+    opt = torch.optim.Adam(isolator.parameters(), lr=0.01)
+    loss_fn = nn.BCEWithLogitsLoss()
+    # summary(isolator, input_size=(TRAIN_SAMPLES,))
+
+    # Set up logging / saving
+    (MODELS / "classifier" / name).mkdir(parents=True, exist_ok=True)
+    (LOGS / "classifier" / name).mkdir(parents=True, exist_ok=True)
+    with open(MODELS / "classifier" / name / "targets.json", "w") as f:
+        json.dump(isolator.targets, f)
+    tb_writer = SummaryWriter(LOGS / "classifier" / name)
+    # tb_writer.add_graph(isolator, torch.rand((1, TRAIN_SAMPLES)).to("cuda"))
+    postfix_str = "{train_loss: <6.4f} {valid_loss: <6.4f}{star}"
+
+    torch.autograd.set_detect_anomaly(True)
+    best_ep = 0
+    best_valid_metric = float("inf")
+    for ep in range(150):
+        with tqdm(desc=f"{ep: >3}", total=len(train_dl), ncols=80) as pbar:
+            isolator.train()
+            losses = []
+            for xb, yb, _ in BgGenerator(train_dl, 5):
+                xb = xb.to(DEVICE)
+
+                opt.zero_grad()
+                target_inds = torch.where(yb[0])[0]
+                xb_isolated = isolator(xb, target_inds=target_inds)
+                y_hat = classifier(xb_isolated[0])[0]
+                y = torch.zeros((len(target_inds), yb.shape[1])).to(DEVICE)
+                for i, ind in enumerate(target_inds):
+                    y[i, ind] = 1.0
+                loss = loss_fn(y_hat, y)
+                # breakpoint()
+                loss.backward()
+                opt.step()
+
+                losses.append(float(loss.detach().cpu().numpy()))
+                pbar.set_postfix_str(
+                    postfix_str.format(
+                        train_loss=np.mean(losses),
+                        valid_loss=float("nan"),
+                        star=" ",
+                    ),
+                    refresh=False,
+                )
+                pbar.update()
+            tb_writer.add_scalar("loss/train", np.mean(losses), ep)

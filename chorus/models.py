@@ -3,7 +3,6 @@ import math
 from pathlib import Path
 
 import torch
-from torch._C import Value
 import torch.nn as nn
 
 
@@ -217,8 +216,8 @@ class Isolator(nn.Module):
             (x.shape[0], len(target_inds), x.shape[1]),
             device=x.device,
         )
-        for i in target_inds:
-            for j in range(x.shape[0]):
+        for j in range(x.shape[0]):
+            for i_counter, i in enumerate(target_inds):
                 bandpass_lo = y[j, :, i, 0] * 0.5
                 # In order to ensure bandpass_hi > bandpass_lo, we put it
                 # in terms of bandpass_lo + (a value guaranteed to be >= 0).
@@ -231,7 +230,7 @@ class Isolator(nn.Module):
                 buffered_x = torch.nn.functional.pad(
                     x[j], (filter_order // 2, filter_order // 2)
                 ).unfold(0, filter_order, 1)
-                isolated[j, i, :] = (buffered_x * filters).sum(dim=1)
+                isolated[j, i_counter, :] = (buffered_x * filters).sum(dim=1)
 
                 volume = nn.functional.interpolate(
                     y[j, :, i, 2][None, None, :],
@@ -239,7 +238,7 @@ class Isolator(nn.Module):
                     mode="linear",
                     align_corners=False,
                 )[0, 0]
-                isolated[j, i, :] *= volume
+                isolated[j, i_counter, :] *= volume
 
                 # Squeeze any sort of memory we can
                 del bandpass_lo, bandpass_hi, filters, buffered_x
