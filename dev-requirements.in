@@ -1,13 +1,13 @@
 -r requirements.txt
 
 appnope  # force this to be required, otherwise mac and linux fight over it.
-mypy
+black
 flake8
 ipython
+isort
 jupyter
 jupyterlab
 matplotlib
-tensorboard
+mypy
 rasterio
-isort
-black
+tensorboard
