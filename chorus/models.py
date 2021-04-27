@@ -113,6 +113,38 @@ def load_classifier(folder: Path, filename: str = None) -> nn.Module:
     return classifier
 
 
+π = 3.141592653589793
+
+
+class _SinC(torch.autograd.Function):
+    """
+    torch.sinc() has a bug w/ the derivative at zero. My fix should make
+    it into v1.9, but until then, we can make our own!
+
+    https://github.com/pytorch/pytorch/pull/56763
+    https://github.com/pytorch/pytorch/issues/56760
+    """
+
+    @staticmethod
+    def forward(ctx, inp):
+        out = torch.sin(inp * π) / (inp * π)
+        out[inp == 0] = 1
+        ctx.save_for_backward(inp)
+        return out
+
+    @staticmethod
+    def backward(ctx, grad):
+        (inp,) = ctx.saved_tensors
+        inp2_pi = inp * inp * π
+        inp_pi = inp * π
+        out = grad * ((inp_pi * inp_pi.cos() - inp_pi.sin()) / inp2_pi).conj()
+        out[inp2_pi == 0] = 0
+        return out
+
+
+sinc = _SinC.apply
+
+
 def firwin(n, pass_lo, pass_hi):
     """
     Returns bandpass filters letting through the specified frequencies.
@@ -155,7 +187,7 @@ def firwin(n, pass_lo, pass_hi):
         raise ValueError("n must be odd and greater than 10")
 
     # Build hamming window
-    fac = torch.linspace(-math.pi, math.pi, n)
+    fac = torch.linspace(-π, π, n)
     hamming_alpha = 0.54  # no idea where this comes from
     win = torch.ones(n) * hamming_alpha
     win = win + (1 - hamming_alpha) * torch.cos(fac)
@@ -165,7 +197,7 @@ def firwin(n, pass_lo, pass_hi):
     m = (torch.arange(0, n) - alpha)[None, :].to(pass_lo.device)
     lo = (pass_lo * 2)[:, None]
     hi = (pass_hi * 2)[:, None]
-    h = hi * torch.sinc(hi @ m) - lo * torch.sinc(lo @ m)
+    h = hi * sinc(hi @ m) - lo * sinc(lo @ m)
 
     # Modulate coefficients by the window
     coefficients = h * win[None, :].to(h.device)
