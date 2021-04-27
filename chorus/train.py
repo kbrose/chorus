@@ -173,14 +173,13 @@ def train_isolator(name: str, classifier_filepath: str):
     best_valid_metric = float("inf")
 
     for ep in range(150):
-        with tqdm(desc=f"{ep: >3}", total=len(train_dl), ncols=80) as pbar:
+        with tqdm(desc=f"{ep: >3}", total=len(train), ncols=80) as pbar:
             isolator.train()
             losses = []
-            counter = 0
             for xb, yb, _ in BgGenerator(train_dl, 5):
-                counter += 1
+                batch_size = xb.shape[0]
                 xb = xb.to(DEVICE)
-                loss = torch.tensor(0.0, device=DEVICE)
+                # loss = torch.tensor(0.0, device=DEVICE)
                 opt.zero_grad()
                 for x, y in zip(xb, yb):
                     target_inds = torch.where(y)[0]
@@ -198,25 +197,23 @@ def train_isolator(name: str, classifier_filepath: str):
                     )
                     for i, ind in enumerate(target_inds):
                         y_act[i, ind] = 1.0
-                    loss += loss_fn(y_hat, y_act)
-                # average the losses from the batch and apply optimizer
-                # even though we only run isolator(x) on single vectors x,
-                # we apply the optimizer across a batch of losses to keep
-                # it smoothed out. Doing this actually decouples the GPU
-                # memory usage from how many examples each weight update sees,
-                # and I'm wondering if anyone else has done this before?
-                loss = loss / xb.shape[0]
-                loss.backward()
+                    loss = loss_fn(y_hat, y_act) / batch_size
+                    loss.backward()
+                    losses.append(
+                        float((loss * batch_size).detach().cpu().numpy())
+                    )
+                    pbar.set_postfix_str(
+                        postfix_str.format(
+                            train_loss=np.mean(losses),
+                            valid_loss=float("nan"),
+                            star=" ",
+                        ),
+                        refresh=False,
+                    )
+                    pbar.update()
+                # We need to call .backward() on each individual audio
+                # file for memory reasons. But that doesn't mean we need
+                # to apply the optimizer on each audio file. We call opt.step()
+                # only after accumulating a batch's worth of gradients.
                 opt.step()
-
-                losses.append(float(loss.detach().cpu().numpy()))
-                pbar.set_postfix_str(
-                    postfix_str.format(
-                        train_loss=np.mean(losses),
-                        valid_loss=float("nan"),
-                        star=" ",
-                    ),
-                    refresh=False,
-                )
-                pbar.update()
             tb_writer.add_scalar("loss/train", np.mean(losses), ep)
