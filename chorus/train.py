@@ -156,7 +156,7 @@ def train_isolator(name: str, classifier_filepath: str):
     classifier.eval()
     isolator = Isolator(targets).to(DEVICE)
     opt = torch.optim.Adam(isolator.parameters(), lr=0.01)
-    loss_fn = nn.BCEWithLogitsLoss()
+    loss_fn = nn.CrossEntropyLoss()
     # summary(isolator, input_size=(TRAIN_SAMPLES,))
 
     # Set up logging / saving
@@ -183,21 +183,13 @@ def train_isolator(name: str, classifier_filepath: str):
                 opt.zero_grad()
                 for x, y in zip(xb, yb):
                     target_inds = torch.where(y)[0]
-                    xb_isolated = isolator(
+                    x_isolated = isolator(
                         x.unsqueeze(0), target_inds=target_inds
                     )
                     # y_hat = predictions from classifier for each isolated
                     # audio stream from the original (single) audio stream
-                    y_hat = classifier(xb_isolated[0])[0]
-                    # y_act = one-hot-encoded targets, if the isolator was
-                    # trying to isolate some bird B, then we want the
-                    # classifier to only predict bird B.
-                    y_act = torch.zeros(
-                        (len(target_inds), y.shape[0]), device=DEVICE
-                    )
-                    for i, ind in enumerate(target_inds):
-                        y_act[i, ind] = 1.0
-                    loss = loss_fn(y_hat, y_act) / batch_size
+                    y_hat = classifier(x_isolated[0])[0]
+                    loss = loss_fn(y_hat, target_inds.to(DEVICE)) / batch_size
                     loss.backward()
                     losses.append(
                         float((loss * batch_size).detach().cpu().numpy())
