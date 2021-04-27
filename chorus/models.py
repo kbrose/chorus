@@ -1,5 +1,4 @@
 import json
-import math
 from pathlib import Path
 
 import torch
@@ -264,6 +263,7 @@ class Isolator(nn.Module):
                 ).unfold(0, filter_order, 1)
                 isolated[j, i_counter, :] = (buffered_x * filters).sum(dim=1)
 
+                # TODO: seems like volume might be better served as a binary?
                 volume = nn.functional.interpolate(
                     y[j, :, i, 2][None, None, :],
                     size=x.shape[1],
