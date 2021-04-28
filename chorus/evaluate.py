@@ -144,12 +144,15 @@ def isolator(
         y_hat = classifier(x_isolated[0])[0]
         raw_y_hat = classifier(x.unsqueeze(0))[0]
         loss = loss_fn(y_hat, target_inds.to(DEVICE)) / batch_size
-        loss.backward()
         losses.append(float((loss * batch_size).detach().cpu().numpy()))
         for i in target_inds.detach().cpu().numpy():
             target = targets[i]
-            raw_y_hats[target].append(raw_y_hat[i].detach().cpu().item())
-            iso_y_hats[target].append(y_hat[i].detach().cpu().item())
+            raw_y_hats[target].append(
+                torch.sigmoid(raw_y_hat)[0, i].detach().cpu().item()
+            )
+            iso_y_hats[target].append(
+                torch.sigmoid(y_hat)[0, i].detach().cpu().item()
+            )
     valid_loss = float(np.mean(losses))
     tb_writer.add_scalar("loss/valid", valid_loss, epoch)
 
@@ -158,6 +161,8 @@ def isolator(
     all_xs = []
     all_ys = []
     for target in targets:
+        if not raw_y_hats[target]:
+            continue
         f, ax = plt.subplots(1)
         x = np.array(raw_y_hats[target])
         y = np.array(iso_y_hats[target]) - np.array(raw_y_hats[target])
