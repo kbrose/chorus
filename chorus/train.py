@@ -14,7 +14,8 @@ from tqdm import tqdm
 
 from chorus.config import DEVICE, SAMPLE_RATE
 from chorus.evaluate import (
-    classifier as evaluate_classifier, isolator as evaluate_isolator
+    classifier as evaluate_classifier,
+    isolator as evaluate_isolator,
 )
 from chorus.geo import Presence
 from chorus.models import Classifier, Isolator, load_classifier
@@ -115,7 +116,7 @@ def train_classifier(name: str):
                     best_ep = ep
                     torch.save(
                         {"model": model.state_dict(), "opt": opt.state_dict()},
-                        str(MODELS / name / f"{ep:0>4}.pth"),
+                        str(MODELS / "classifier" / name / f"{ep:0>4}.pth"),
                     )
                 pbar.set_postfix_str(
                     postfix_str.format(
@@ -139,7 +140,11 @@ def train_classifier(name: str):
 
 def train_isolator(name: str, classifier_filepath: str):
     # Set up data
-    targets, (train, test) = model_data(TRAIN_SAMPLES)
+    with open(Path(classifier_filepath).parent / "targets.json") as f:
+        # It's absolutely critical that we use the exact same list of target
+        # species in the exact same order as used for the classifier.
+        targets = json.load(f)
+    train, test = model_data(TRAIN_SAMPLES, targets)[1]
     print(
         f"Training on {len(train)} samples, testing on {len(test)} samples"
         f" from {len(targets)} distinct species."
@@ -162,11 +167,11 @@ def train_isolator(name: str, classifier_filepath: str):
     # summary(isolator, input_size=(TRAIN_SAMPLES,))
 
     # Set up logging / saving
-    (MODELS / "classifier" / name).mkdir(parents=True, exist_ok=True)
-    (LOGS / "classifier" / name).mkdir(parents=True, exist_ok=True)
-    with open(MODELS / "classifier" / name / "targets.json", "w") as f:
+    (MODELS / "isolator" / name).mkdir(parents=True, exist_ok=True)
+    (LOGS / "isolator" / name).mkdir(parents=True, exist_ok=True)
+    with open(MODELS / "isolator" / name / "targets.json", "w") as f:
         json.dump(isolator.targets, f)
-    tb_writer = SummaryWriter(LOGS / "classifier" / name)
+    tb_writer = SummaryWriter(LOGS / "isolator" / name)
     # tb_writer.add_graph(isolator, torch.rand((1, TRAIN_SAMPLES)).to("cuda"))
     postfix_str = "{train_loss: <6.4f} {valid_loss: <6.4f}{star}"
 
@@ -218,7 +223,7 @@ def train_isolator(name: str, classifier_filepath: str):
                     loss_fn,
                     test_dl,
                     tb_writer,
-                    targets
+                    targets,
                 )
                 star = " "
                 if validation_metric < best_valid_metric:
@@ -227,9 +232,9 @@ def train_isolator(name: str, classifier_filepath: str):
                     torch.save(
                         {
                             "model": isolator.state_dict(),
-                            "opt": opt.state_dict()
+                            "opt": opt.state_dict(),
                         },
-                        str(MODELS / name / f"{ep:0>4}.pth"),
+                        str(MODELS / "isolator" / name / f"{ep:0>4}.pth"),
                     )
                 pbar.set_postfix_str(
                     postfix_str.format(
