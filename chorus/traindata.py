@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -132,7 +132,9 @@ class Data(NamedTuple):
     test: SongDataset
 
 
-def model_data(train_samples: int) -> tuple[list[str], Data]:
+def model_data(
+    train_samples: int, targets: Optional[list[str]] = None
+) -> tuple[list[str], Data]:
     """
     Get the training and testing data to be used for the model.
 
@@ -140,10 +142,13 @@ def model_data(train_samples: int) -> tuple[list[str], Data]:
     ------
     train_sample : int
         How many samples per example
+    targets : Optional[list[str]]
+        If specified, this is the list of target species.
+        If not specified, this is inferred from the data itself.
 
     Returns
     -------
-    Data
+    targets, Data
     """
     df = metadata.xeno_canto()
     observed_ids = [f.stem for f in AUDIO_FOLDER.glob("*")]
@@ -161,9 +166,12 @@ def model_data(train_samples: int) -> tuple[list[str], Data]:
         & (df["scientific-name"].isin(names_in_geo))  # align with geo presence
         & (df[["lat", "lng", "week"]].notnull().all(axis=1))  # geo query-able
     ]
-    targets = sorted(
-        df["scientific-name"].value_counts()[lambda x: x >= 50].index.tolist()
-    )
+    if targets is None:
+        targets = sorted(
+            df["scientific-name"]
+            .value_counts()[lambda x: x >= 50]
+            .index.tolist()
+        )
     df = df.loc[df["scientific-name"].isin(targets)]
     train_df, test_df = train_test_split(
         df, test_size=0.3, stratify=df["scientific-name"], random_state=2020310
