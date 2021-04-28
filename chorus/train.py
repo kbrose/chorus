@@ -13,7 +13,9 @@ from torchsummary import summary
 from tqdm import tqdm
 
 from chorus.config import DEVICE, SAMPLE_RATE
-from chorus.evaluate import evaluate
+from chorus.evaluate import (
+    classifier as evaluate_classifier, isolator as evaluate_isolator
+)
 from chorus.geo import Presence
 from chorus.models import Classifier, Isolator, load_classifier
 from chorus.traindata import model_data
@@ -97,7 +99,7 @@ def train_classifier(name: str):
             tb_writer.add_scalar("loss/train", np.mean(losses), ep)
             model.eval()
             with torch.no_grad():
-                validation_metric = evaluate(
+                validation_metric = evaluate_classifier(
                     ep,
                     model,
                     loss_fn,
@@ -169,7 +171,6 @@ def train_isolator(name: str, classifier_filepath: str):
     postfix_str = "{train_loss: <6.4f} {valid_loss: <6.4f}{star}"
 
     torch.autograd.set_detect_anomaly(True)
-    best_ep = 0
     best_valid_metric = float("inf")
 
     for ep in range(150):
@@ -179,7 +180,6 @@ def train_isolator(name: str, classifier_filepath: str):
             for xb, yb, _ in BgGenerator(train_dl, 5):
                 batch_size = xb.shape[0]
                 xb = xb.to(DEVICE)
-                # loss = torch.tensor(0.0, device=DEVICE)
                 opt.zero_grad()
                 for x, y in zip(xb, yb):
                     target_inds = torch.where(y)[0]
@@ -209,3 +209,33 @@ def train_isolator(name: str, classifier_filepath: str):
                 # only after accumulating a batch's worth of gradients.
                 opt.step()
             tb_writer.add_scalar("loss/train", np.mean(losses), ep)
+            isolator.eval()
+            with torch.no_grad():
+                validation_metric = evaluate_isolator(
+                    ep,
+                    classifier,
+                    isolator,
+                    loss_fn,
+                    test_dl,
+                    tb_writer,
+                    targets
+                )
+                star = " "
+                if validation_metric < best_valid_metric:
+                    star = "*"
+                    best_valid_metric = validation_metric
+                    torch.save(
+                        {
+                            "model": isolator.state_dict(),
+                            "opt": opt.state_dict()
+                        },
+                        str(MODELS / name / f"{ep:0>4}.pth"),
+                    )
+                pbar.set_postfix_str(
+                    postfix_str.format(
+                        train_loss=np.mean(losses),
+                        valid_loss=validation_metric,
+                        star=star,
+                    ),
+                    refresh=True,
+                )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from prefetch_generator import BackgroundGenerator as BgGenerator
 from sklearn.metrics import roc_auc_score, roc_curve
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
@@ -10,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 from chorus.config import DEVICE
 
 
-def evaluate(
+def classifier(
     epoch: int,
     model: nn.Module,
     loss_fn: nn.Module,
@@ -115,5 +116,57 @@ def evaluate(
     axs[1].grid()
     axs[0].set_xlim([-1, 26])
     tb_writer.add_figure("ranks", f, epoch)
+
+    return valid_loss
+
+
+def isolator(
+    epoch: int,
+    classifier: nn.Module,
+    isolator: nn.Module,
+    loss_fn: nn.Module,
+    data: torch.utils.data.DataLoader,
+    tb_writer: SummaryWriter,
+    targets: list[str],
+):
+    losses = []
+    raw_y_hats: dict[str, list[float]] = {target: [] for target in targets}
+    iso_y_hats: dict[str, list[float]] = {target: [] for target in targets}
+    for xb, yb, _ in BgGenerator(data, 5):
+        batch_size = xb.shape[0]
+        xb = xb.to(DEVICE)
+        x = xb[0]
+        y = yb[0]
+        target_inds = torch.where(y)[0]
+        x_isolated = isolator(x.unsqueeze(0), target_inds=target_inds)
+        # y_hat = predictions from classifier for each isolated
+        # audio stream from the original (single) audio stream
+        y_hat = classifier(x_isolated[0])[0]
+        raw_y_hat = classifier(x.unsqueeze(0))[0]
+        loss = loss_fn(y_hat, target_inds.to(DEVICE)) / batch_size
+        loss.backward()
+        losses.append(float((loss * batch_size).detach().cpu().numpy()))
+        for i in target_inds.detach().cpu().numpy():
+            target = targets[i]
+            raw_y_hats[target].append(raw_y_hat[i].detach().cpu().item())
+            iso_y_hats[target].append(y_hat[i].detach().cpu().item())
+    valid_loss = float(np.mean(losses))
+    tb_writer.add_scalar("loss/valid", valid_loss, epoch)
+
+    bins = (np.linspace(0, 1, 21), np.linspace(-1, 1, 41))
+    full_f, full_ax = plt.subplots(1)
+    all_xs = []
+    all_ys = []
+    for target in targets:
+        f, ax = plt.subplots(1)
+        x = np.array(raw_y_hats[target])
+        y = np.array(iso_y_hats[target]) - np.array(raw_y_hats[target])
+        all_xs.append(x)
+        all_ys.append(y)
+        ax.set_title(target)
+        ax.hist2d(x, y, bins=bins)
+        tb_writer.add_figure(f"gains/{target}", f, epoch)
+    full_ax.hist2d(np.concatenate(all_xs), np.concatenate(all_ys), bins=bins)
+    tb_writer.add_figure("gains/all_species", full_f, epoch)
 
     return valid_loss
