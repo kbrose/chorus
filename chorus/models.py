@@ -184,22 +184,23 @@ def firwin(n, pass_lo, pass_hi):
     # except that it handles arrays of pass_lo and pass_hi
     if not n % 2 or n <= 10:
         raise ValueError("n must be odd and greater than 10")
+    device = pass_lo.device
 
     # Build hamming window
-    fac = torch.linspace(-π, π, n)
+    fac = torch.linspace(-π, π, n, device=device)
     hamming_alpha = 0.54  # no idea where this comes from
-    win = torch.ones(n) * hamming_alpha
+    win = torch.ones(n, device=device) * hamming_alpha
     win = win + (1 - hamming_alpha) * torch.cos(fac)
 
     # Build up the coefficients.
     alpha = 0.5 * (n - 1)
-    m = (torch.arange(0, n) - alpha)[None, :].to(pass_lo.device)
+    m = (torch.arange(0, n, device=device) - alpha)[None, :]
     lo = (pass_lo * 2)[:, None]
     hi = (pass_hi * 2)[:, None]
     h = hi * sinc(hi @ m) - lo * sinc(lo @ m)
 
     # Modulate coefficients by the window
-    coefficients = h * win[None, :].to(h.device)
+    coefficients = h * win[None, :]
     return coefficients
 
 
@@ -207,11 +208,9 @@ class Isolator(nn.Module):
     def __init__(self, targets: list[str]):
         super().__init__()
 
-        self.identity = torch.nn.Identity()  # used for better summary
-
-        channels = [1, 2, 4, 4, 8, 8, 16, 32]
-        strides = [2, 2, 1, 2, 2, 1, 2]
-        dilations = [1, 2, 2, 1, 2, 2, 1]
+        channels = [1, 4, 4, 8, 8, 8, 16, 16, 32, 32, 64]
+        strides = [3, 2, 2, 1, 3, 2, 2, 1, 2, 2]
+        dilations = [1, 2, 2, 2, 1, 2, 2, 2, 2, 1]
         assert len(strides) == len(channels) - 1 == len(dilations)
         self.resnet = nn.Sequential(
             *[
@@ -232,10 +231,9 @@ class Isolator(nn.Module):
         self.targets = targets
 
     def forward(self, x, target_inds=None):
-        filter_order = 255
+        filter_order = 127
 
         y = x.unsqueeze(1)
-        y = self.identity(y)
 
         y = self.resnet(y)
         y = self.sigmoid(self.regressor(y))
@@ -253,10 +251,24 @@ class Isolator(nn.Module):
                 # In order to ensure bandpass_hi > bandpass_lo, we put it
                 # in terms of bandpass_lo + (a value guaranteed to be >= 0).
                 bandpass_hi = bandpass_lo + y[j, :, i, 1] * (0.5 - bandpass_lo)
+
+                bandpass_lo = nn.functional.interpolate(
+                    bandpass_lo[None, None, :],
+                    size=x.shape[1],
+                    mode="linear",
+                    align_corners=True,
+                )[0, 0]
+                bandpass_hi = nn.functional.interpolate(
+                    bandpass_hi[None, None, :],
+                    size=x.shape[1],
+                    mode="linear",
+                    align_corners=True,
+                )[0, 0]
+
                 filters = firwin(filter_order, bandpass_lo, bandpass_hi)
-                filters = nn.functional.interpolate(
-                    filters.T[None, :, :], size=x.shape[1], mode="nearest"
-                )[0].T
+                # filters = nn.functional.interpolate(
+                #     filters.T[None, :, :], size=x.shape[1], mode="nearest"
+                # )[0].T
 
                 buffered_x = torch.nn.functional.pad(
                     x[j], (filter_order // 2, filter_order // 2)
@@ -264,13 +276,13 @@ class Isolator(nn.Module):
                 isolated[j, i_counter, :] = (buffered_x * filters).sum(dim=1)
 
                 # TODO: seems like volume might be better served as a binary?
-                volume = nn.functional.interpolate(
-                    y[j, :, i, 2][None, None, :],
-                    size=x.shape[1],
-                    mode="linear",
-                    align_corners=False,
-                )[0, 0]
-                isolated[j, i_counter, :] *= volume
+                # volume = nn.functional.interpolate(
+                #     y[j, :, i, 2][None, None, :],
+                #     size=x.shape[1],
+                #     mode="linear",
+                #     align_corners=False,
+                # )[0, 0]
+                # isolated[j, i_counter, :] *= volume
 
                 # Squeeze any sort of memory we can
                 del bandpass_lo, bandpass_hi, filters, buffered_x

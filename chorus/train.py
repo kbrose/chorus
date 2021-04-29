@@ -188,6 +188,11 @@ def train_isolator(name: str, classifier_filepath: str):
                 opt.zero_grad()
                 for x, y in zip(xb, yb):
                     target_inds = torch.where(y)[0]
+                    # Doing more than 8 species at a time runs out of mem
+                    # on the 1080 Ti
+                    n = target_inds.shape[0]
+                    if n > 8:
+                        target_inds = target_inds[torch.randperm(n)[:8]]
                     x_isolated = isolator(
                         x.unsqueeze(0), target_inds=target_inds
                     )
