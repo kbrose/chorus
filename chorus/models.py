@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 
 
 class ResLayer(nn.Module):
@@ -120,16 +121,15 @@ class _SinC(torch.autograd.Function):
     torch.sinc() has a bug w/ the derivative at zero. My fix should make
     it into v1.9, but until then, we can make our own!
 
-    https://github.com/pytorch/pytorch/pull/56763
     https://github.com/pytorch/pytorch/issues/56760
+    https://github.com/pytorch/pytorch/pull/56763
+    https://github.com/pytorch/pytorch/pull/56986
     """
 
     @staticmethod
     def forward(ctx, inp):
-        out = torch.sin(inp * π) / (inp * π)
-        out[inp == 0] = 1
         ctx.save_for_backward(inp)
-        return out
+        return torch.sinc(inp)
 
     @staticmethod
     def backward(ctx, grad):
@@ -225,19 +225,19 @@ class Isolator(nn.Module):
             ]
         )
         self.n = len(targets)
-        self.regressor = nn.Conv1d(channels[-1], self.n * 3, 1, 1)
-        self.sigmoid = nn.Sigmoid()
+        self.regressor = nn.Conv1d(channels[-1], self.n * 2, 1, 1)
+        self.hardsigmoid = nn.Hardsigmoid()
 
         self.targets = targets
 
     def forward(self, x, target_inds=None):
-        filter_order = 127
+        filter_order = torch.tensor(255, dtype=torch.int16)
 
         y = x.unsqueeze(1)
 
         y = self.resnet(y)
-        y = self.sigmoid(self.regressor(y))
-        y = y.reshape(x.shape[0], -1, self.n, 3)
+        y = self.hardsigmoid(self.regressor(y))
+        y = y.reshape(x.shape[0], -1, self.n, 2)
 
         if target_inds is None:
             target_inds = torch.arange(self.n)
@@ -265,24 +265,15 @@ class Isolator(nn.Module):
                     align_corners=True,
                 )[0, 0]
 
-                filters = firwin(filter_order, bandpass_lo, bandpass_hi)
-                # filters = nn.functional.interpolate(
-                #     filters.T[None, :, :], size=x.shape[1], mode="nearest"
-                # )[0].T
+                # Using checkpoint uses more compute but less memory
+                filters = checkpoint(
+                    firwin, filter_order, bandpass_lo, bandpass_hi
+                )
 
                 buffered_x = torch.nn.functional.pad(
                     x[j], (filter_order // 2, filter_order // 2)
                 ).unfold(0, filter_order, 1)
                 isolated[j, i_counter, :] = (buffered_x * filters).sum(dim=1)
-
-                # TODO: seems like volume might be better served as a binary?
-                # volume = nn.functional.interpolate(
-                #     y[j, :, i, 2][None, None, :],
-                #     size=x.shape[1],
-                #     mode="linear",
-                #     align_corners=False,
-                # )[0, 0]
-                # isolated[j, i_counter, :] *= volume
 
                 # Squeeze any sort of memory we can
                 del bandpass_lo, bandpass_hi, filters, buffered_x
