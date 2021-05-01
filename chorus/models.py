@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
 
@@ -230,9 +232,13 @@ class Isolator(nn.Module):
 
         self.targets = targets
 
-    def forward(self, x, target_inds=None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        target_inds: torch.Tensor | list[int] | None = None,
+    ):
         filter_order = torch.tensor(255, dtype=torch.int16)
-
+        y: torch.Tensor
         y = x.unsqueeze(1)
 
         y = self.resnet(y)
@@ -272,10 +278,9 @@ class Isolator(nn.Module):
 
                 buffered_x = torch.nn.functional.pad(
                     x[j], (filter_order // 2, filter_order // 2)
-                ).unfold(0, filter_order, 1)
+                ).unfold(
+                    0, filter_order, 1  # type:ignore
+                )
                 isolated[j, i_counter, :] = (buffered_x * filters).sum(dim=1)
-
-                # Squeeze any sort of memory we can
-                del bandpass_lo, bandpass_hi, filters, buffered_x
 
         return isolated
