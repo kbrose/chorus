@@ -156,7 +156,6 @@ def isolator(
     valid_loss = float(np.mean(losses))
     tb_writer.add_scalar("loss/valid", valid_loss, epoch)
 
-    bins = (np.linspace(0, 1, 21), np.linspace(-1, 1, 41))
     full_f, full_ax = plt.subplots(1)
     all_xs = []
     all_ys = []
@@ -169,9 +168,13 @@ def isolator(
         all_xs.append(x)
         all_ys.append(y)
         ax.set_title(target)
-        ax.hist2d(x, y, bins=bins)
+        ax.plot(x, y, ".")
+        ax.set_xlim([0, 1])
+        ax.set_ylim([-1, 1])
         tb_writer.add_figure(f"gains/{target}", f, epoch)
-    full_ax.hist2d(np.concatenate(all_xs), np.concatenate(all_ys), bins=bins)
+    full_ax.plot(np.concatenate(all_xs), np.concatenate(all_ys), ".")
+    full_ax.set_xlim([0, 1])
+    full_ax.set_ylim([-1, 1])
     tb_writer.add_figure("gains/all_species", full_f, epoch)
 
     return valid_loss
