@@ -179,10 +179,12 @@ def train_isolator(name: str, classifier_filepath: str):
     best_valid_metric = float("inf")
 
     for ep in range(150):
-        with tqdm(desc=f"{ep: >3}", total=len(train), ncols=80) as pbar:
+        with tqdm(
+            desc=f"{ep: >3}", total=len(train), ncols=80, smoothing=0
+        ) as pbar:
             isolator.train()
             losses = []
-            for xb, yb, _ in BgGenerator(train_dl, 5):
+            for xb, yb, _ in BgGenerator(train_dl, 2):
                 batch_size = xb.shape[0]
                 xb = xb.to(DEVICE)
                 opt.zero_grad()
