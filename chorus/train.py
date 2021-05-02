@@ -195,9 +195,11 @@ def train_isolator(name: str, classifier_filepath: str):
                     # Using 20 as upper bound works for at least a GTX 1080 Ti.
                     n = target_inds.shape[0]
                     if n > 20:
-                        target_inds = target_inds[torch.randperm(n)[:8]]
+                        target_inds = target_inds[torch.randperm(n)[:20]]
                     x_isolated = isolator(
-                        x.unsqueeze(0), target_inds=target_inds
+                        x.unsqueeze(0),
+                        target_inds=target_inds,
+                        use_checkpoint=False,
                     )
                     # y_hat = predictions from classifier for each isolated
                     # audio stream from the original (single) audio stream
