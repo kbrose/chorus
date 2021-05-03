@@ -236,7 +236,6 @@ class Isolator(nn.Module):
         self,
         x: torch.Tensor,
         target_inds: torch.Tensor | list[int] | None = None,
-        use_checkpoint: bool = False,
     ):
         filter_order = torch.tensor(255, dtype=torch.int16)
         y: torch.Tensor
@@ -272,7 +271,7 @@ class Isolator(nn.Module):
                     align_corners=True,
                 )[0, 0]
 
-                if use_checkpoint:
+                if self.training:
                     # Checkpoint uses more compute but less memory in backprop
                     filters = checkpoint(
                         firwin, filter_order, bandpass_lo, bandpass_hi

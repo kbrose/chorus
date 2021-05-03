@@ -197,9 +197,7 @@ def train_isolator(name: str, classifier_filepath: str):
                     if n > 20:
                         target_inds = target_inds[torch.randperm(n)[:20]]
                     x_isolated = isolator(
-                        x.unsqueeze(0),
-                        target_inds=target_inds,
-                        use_checkpoint=False,
+                        x.unsqueeze(0), target_inds=target_inds
                     )
                     # y_hat = predictions from classifier for each isolated
                     # audio stream from the original (single) audio stream
