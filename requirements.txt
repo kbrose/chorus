@@ -57,7 +57,7 @@ packaging==20.9
     # via pooch
 pandas==1.2.3
     # via -r requirements.in
-pillow==8.1.2
+pillow==8.2.0
     # via
     #   -r requirements.in
     #   matplotlib
