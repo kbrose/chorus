@@ -11,3 +11,4 @@ matplotlib
 mypy
 rasterio
 tensorboard
+types-requests
