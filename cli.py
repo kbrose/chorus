@@ -1,7 +1,11 @@
+import datetime
+from pathlib import Path
+
 import click
 
 from chorus import pipelines
 from chorus import train as c_train
+from chorus import infer
 from chorus.config import SAMPLE_RATE
 
 
@@ -68,17 +72,47 @@ def train():
     pass
 
 
-@train.command(help="train the classifier model")
+@train.command(help="train the classifier model", name="classifier")
 @click.argument("name", type=str)
-def classifier(name: str):
+def train_classifier(name: str):
     c_train.train_classifier(name)
 
 
-@train.command(help="train the isolator model")
+@train.command(help="train the isolator model", name="isolator")
 @click.argument("name", type=str)
 @click.argument("classifier_filepath", type=str)
-def isolator(name: str, classifier_filepath: str):
+def train_isolator(name: str, classifier_filepath: str):
     c_train.train_isolator(name, classifier_filepath)
+
+
+@cli.group(help="run models on audio file")
+def run():
+    pass
+
+
+@run.command(help="run classifier on audio file", name="classifier")
+@click.argument("modelpath", type=Path)
+@click.argument("audiofile", type=Path)
+@click.option(
+    "--latlng", default=None, help="comma-separated lat,lng coordinates"
+)
+@click.option("--date", default=None, help="date of recording as YYYY-MM-DD")
+@click.option(
+    "--top-n",
+    type=int,
+    default=5,
+    help="Show top n predictions",
+    show_default=True,
+)
+def run_classifier(modelpath: Path, audiofile: Path, latlng, date, top_n: int):
+    """Run classifier located at MODELPATH on AUDIOFILE"""
+    if latlng is not None:
+        latlng = [float(x) for x in latlng.split(",")]
+    if date is not None:
+        date = datetime.datetime.fromisoformat(date)
+    preds = infer.run_classifier(modelpath, audiofile, latlng, date)
+    for label in sorted(preds, key=preds.__getitem__, reverse=True)[:top_n]:
+        print(f"{label: >30}: {preds[label]:.3f}")
 
 
 if __name__ == "__main__":

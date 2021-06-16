@@ -104,7 +104,12 @@ class Classifier(nn.Module):
         return torch.mean(logits, dim=2), logits
 
 
-def load_classifier(folder: Path, filename: str = None) -> nn.Module:
+def load_classifier(
+    folder: Path, filename: str = None
+) -> tuple[nn.Module, list[str]]:
+    """
+    Load the classifier and the list of class labels
+    """
     with open(folder / "targets.json") as f:
         targets = json.load(f)
     classifier = Classifier(targets)
@@ -112,7 +117,9 @@ def load_classifier(folder: Path, filename: str = None) -> nn.Module:
         filename = max([f.name for f in folder.glob("*.pth")])
     state_dict = torch.load(folder / filename)
     classifier.load_state_dict(state_dict["model"])
-    return classifier
+    with open(folder / "targets.json") as f:
+        classes = json.load(f)
+    return classifier, classes
 
 
 π = 3.141592653589793

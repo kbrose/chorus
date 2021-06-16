@@ -157,7 +157,7 @@ def train_isolator(name: str, classifier_filepath: str):
     # Set up model and optimizations
     classifier = load_classifier(
         Path(classifier_filepath).parent, Path(classifier_filepath).name
-    ).to(DEVICE)
+    )[0].to(DEVICE)
     for param in classifier.parameters():
         param.requires_grad = False
     classifier.eval()
