@@ -3,8 +3,9 @@ from pathlib import Path
 
 import click
 
-from chorus import pipelines
 from chorus import train as c_train
+from chorus import pipelines
+
 from chorus import infer
 from chorus.config import SAMPLE_RATE
 
