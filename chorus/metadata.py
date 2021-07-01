@@ -38,7 +38,29 @@ def xeno_canto() -> pd.DataFrame:
     return df
 
 
-def scientific_to_en(df: pd.DataFrame) -> dict[str, str]:
+def get_sci2en() -> dict[str, str]:
+    filepath = DATA_FOLDER / "sci2en.json"
+    if not filepath.exists():
+        with open(filepath, "w") as f:
+            json.dump(_generate_scientific_to_en(xeno_canto()), f)
+    with open(filepath) as f:
+        sci2en = json.load(f)
+    return defaultdict(lambda: "unknown", sci2en)
+
+
+def get_en2sci() -> dict[str, str]:
+    filepath = DATA_FOLDER / "sci2en.json"
+    if not filepath.exists():
+        with open(filepath, "w") as f:
+            json.dump(_generate_scientific_to_en(xeno_canto()), f)
+    with open(filepath) as f:
+        sci2en = json.load(f)
+    return defaultdict(
+        lambda: "unknown", {val: key for key, val in sci2en.items()}
+    )
+
+
+def _generate_scientific_to_en(df: pd.DataFrame) -> dict[str, str]:
     """
     Create mapping of scientific name to english name.
 

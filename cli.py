@@ -105,13 +105,25 @@ def run():
     help="Show top n predictions",
     show_default=True,
 )
-def run_classifier(modelpath: Path, audiofile: Path, latlng, date, top_n: int):
+@click.option(
+    "--scientific", is_flag=True, help="Display results using scientific names"
+)
+def run_classifier(
+    modelpath: Path,
+    audiofile: Path,
+    latlng,
+    date,
+    top_n: int,
+    scientific: bool,
+):
     """Run classifier located at MODELPATH on AUDIOFILE"""
     if latlng is not None:
         latlng = [float(x) for x in latlng.split(",")]
     if date is not None:
         date = datetime.datetime.fromisoformat(date)
-    preds = infer.run_classifier(modelpath, audiofile, latlng, date)
+    preds = infer.run_classifier(
+        modelpath, audiofile, latlng, date, scientific=scientific
+    )
     for label in sorted(preds, key=preds.__getitem__, reverse=True)[:top_n]:
         print(f"{label: >30}: {preds[label]:.3f}")
 

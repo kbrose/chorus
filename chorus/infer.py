@@ -10,6 +10,7 @@ import torch
 from chorus.models import load_classifier
 from chorus.config import SAMPLE_RATE
 from chorus.geo import Presence
+from chorus.metadata import get_sci2en
 
 
 warnings.filterwarnings(
@@ -23,7 +24,8 @@ def run_classifier(
     latlng: tuple[float, float] | None = None,
     date: datetime.datetime | None = None,
     region_influence: float = 0.9,
-    device=None,
+    device: str | None = None,
+    scientific: bool = False,
 ):
     """Run classifier located at MODELPATH on AUDIOFILE"""
     if modelpath.is_dir():
@@ -53,5 +55,9 @@ def run_classifier(
             results[key] = results[key] * (
                 region_influence * geoprobs[key] + (1 - region_influence)
             )
+
+    if not scientific:
+        sci2en = get_sci2en()
+        results = {sci2en[key]: val for key, val in results.items()}
 
     return results
