@@ -82,6 +82,7 @@ class Classifier(nn.Module):
         self.classifier = nn.Conv1d(
             channels[-1] * len(resnets), len(targets), 1, 1
         )
+        self.maxer = torch.nn.AdaptiveMaxPool1d(1)
 
         self.targets = targets
 
@@ -101,7 +102,7 @@ class Classifier(nn.Module):
         y = torch.cat(ys, dim=1)
         logits = self.classifier(y)
 
-        return torch.mean(logits, dim=2), logits
+        return self.maxer(logits)[:, :, 0], logits
 
 
 def load_classifier(
