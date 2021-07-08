@@ -135,3 +135,4 @@ logs
 models
 !docs/models/
 .DS_Store
+examples/
