@@ -11,7 +11,7 @@ Across the 205 species with enough data, the model is able to pick out the corre
 
 **NOTE:** This is on data that looks similar to the training data, specifically, most of the tested audio files were recorded with higher end equipment than your average smartphone.
 
-Including geographic information (using ebird's range maps) to filter out species that were not in that are provides slight improvements over the pure audio model.
+Including geographic information (using ebird's range maps) to filter out species that were not in that area provides slight improvements over the pure audio model.
 
 ![](./static/top-n.png)
 
