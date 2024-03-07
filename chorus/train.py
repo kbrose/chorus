@@ -52,9 +52,10 @@ def train_classifier(name: str):
     summary(model, input_size=(TRAIN_SAMPLES,))
 
     # Set up logging / saving
-    (MODELS / "classifier" / name).mkdir(parents=True, exist_ok=True)
+    model_folder = MODELS / "classifier" / name
+    model_folder.mkdir(parents=True, exist_ok=True)
     (LOGS / "classifier" / name).mkdir(parents=True, exist_ok=True)
-    with open(MODELS / "classifier" / name / "targets.json", "w") as f:
+    with open(model_folder / "targets.json", "w") as f:
         json.dump(model.targets, f)
     tb_writer = SummaryWriter(LOGS / "classifier" / name)
     tb_writer.add_graph(model, torch.rand((1, TRAIN_SAMPLES)).to("cuda"))
@@ -116,7 +117,7 @@ def train_classifier(name: str):
                     best_ep = ep
                     torch.save(
                         {"model": model.state_dict(), "opt": opt.state_dict()},
-                        str(MODELS / "classifier" / name / f"{ep:0>4}.pth"),
+                        str(model_folder / f"{ep:0>4}.pth"),
                     )
                 pbar.set_postfix_str(
                     postfix_str.format(
@@ -128,7 +129,7 @@ def train_classifier(name: str):
                 )
         if ((ep + 1 - best_ep) % 5) == 0:
             lr = opt.param_groups[0]["lr"]
-            checkpoint = torch.load(str(MODELS / name / f"{best_ep:0>4}.pth"))
+            checkpoint = torch.load(str(model_folder / f"{best_ep:0>4}.pth"))
             model.load_state_dict(checkpoint["model"])
             opt.load_state_dict(checkpoint["opt"])
             opt.param_groups[0]["lr"] = lr / 2
@@ -167,9 +168,10 @@ def train_isolator(name: str, classifier_filepath: str):
     # summary(isolator, input_size=(TRAIN_SAMPLES,))
 
     # Set up logging / saving
-    (MODELS / "isolator" / name).mkdir(parents=True, exist_ok=True)
+    model_folder = MODELS / "isolator" / name
+    model_folder.mkdir(parents=True, exist_ok=True)
     (LOGS / "isolator" / name).mkdir(parents=True, exist_ok=True)
-    with open(MODELS / "isolator" / name / "targets.json", "w") as f:
+    with open(model_folder / "targets.json", "w") as f:
         json.dump(isolator.targets, f)
     tb_writer = SummaryWriter(LOGS / "isolator" / name)
     # tb_writer.add_graph(isolator, torch.rand((1, TRAIN_SAMPLES)).to("cuda"))
@@ -242,7 +244,7 @@ def train_isolator(name: str, classifier_filepath: str):
                             "model": isolator.state_dict(),
                             "opt": opt.state_dict(),
                         },
-                        str(MODELS / "isolator" / name / f"{ep:0>4}.pth"),
+                        str(model_folder / f"{ep:0>4}.pth"),
                     )
                 pbar.set_postfix_str(
                     postfix_str.format(
@@ -252,3 +254,29 @@ def train_isolator(name: str, classifier_filepath: str):
                     ),
                     refresh=True,
                 )
+
+
+def export_jitted_classifier(model_in_path: Path, model_out_path: Path):
+    if model_in_path.is_dir():
+        model, classes = load_classifier(model_in_path)
+    else:
+        model, classes = load_classifier(
+            model_in_path.parent, model_in_path.name
+        )
+
+    model = model.eval()
+    model = torch.jit.trace_module(
+        model,
+        inputs={
+            "forward": torch.ones((1, TRAIN_SAMPLES), dtype=torch.float32)
+        },
+    )
+    model = torch.jit.optimize_for_inference(model)
+    model.save(
+        str(model_out_path),
+        _extra_files={"targets.json", json.dumps(model.targets)},
+    )
+    # To load:
+    # extra_files = {"targets.json": ""}  # contents get replaced on load
+    # model = torch.jit.load(path, _extra_files=extra_files)
+    # targets = json.loads(extra_files["targets.json"])

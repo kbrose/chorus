@@ -46,7 +46,7 @@ class ResLayer(nn.Module):
 
 
 class Classifier(nn.Module):
-    def __init__(self, targets):
+    def __init__(self, targets: list[str]):
         super().__init__()
 
         self.identity = torch.nn.Identity()  # used for better summary
@@ -103,6 +103,9 @@ class Classifier(nn.Module):
         logits = self.classifier(y)
 
         return self.maxer(logits)[:, :, 0], logits
+
+    def get_targets(self):
+        return self.targets
 
 
 def load_classifier(
