@@ -48,7 +48,7 @@ class SongDataset(torch.utils.data.Dataset):
         self.df = df
         self.aug_df = aug_df
         self.is_train = aug_df is not None
-        self.targets = targets
+        self.targets = np.array(targets)
         self.train_samples = train_samples
         self.background_files = list((DATA_FOLDER / "background").glob("*"))
 
@@ -114,12 +114,11 @@ class SongDataset(torch.utils.data.Dataset):
         y_names = self._row_to_labels(row)
         if self.is_train:
             x, y_names = self.augment(x, y_names)
-        y_names = set(y_names)
-        y = [1.0 if name in y_names else 0.0 for name in self.targets]
-        weights = [
-            1.0 if name == row["scientific-name"] else 0.2
-            for name in self.targets
-        ]
+        y = np.isin(self.targets, y_names).astype(np.float32)
+        weights = np.ones_like(self.targets, dtype=np.float32)
+        # Set weights of everything to 1.0, except the "also" birds which
+        # are set to a weight of 0.1
+        weights -= np.isin(self.targets, row["also"]).astype(np.float32) * 0.9
 
         return torch.as_tensor(x), torch.as_tensor(y), torch.as_tensor(weights)
 
