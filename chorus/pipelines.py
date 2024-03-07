@@ -21,7 +21,7 @@ from typing_extensions import Literal, TypedDict
 from chorus import metadata
 from chorus.config import DATA_FOLDER
 
-SECONDS_BETWEEN_REQUESTS = 0.2
+SECONDS_BETWEEN_REQUESTS = 0.3
 XENO_CANTO_URL = (
     "https://www.xeno-canto.org/api/2/recordings"
     '?query=cnt:"United States"&page={page}'
@@ -155,7 +155,7 @@ def save_all_xeno_canto_audio(progress=True, skip_existing=True):
                 pbar.set_postfix_str(f"skipped = {skipped}")
                 continue
             try:
-                r = requests.get(f'https:{meta["file"]}')
+                r = requests.get(meta["file"])
                 filename = meta["id"] + "." + meta["file-name"].split(".")[-1]
                 with open(audio_folder / filename, "wb") as f:
                     f.write(r.content)
