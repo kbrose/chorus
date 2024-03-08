@@ -86,6 +86,16 @@ def train_isolator(name: str, classifier_filepath: str):
     c_train.train_isolator(name, classifier_filepath)
 
 
+@train.command(
+    help="export a classifier model as an optimized torchscript module",
+    name="export-classifier",
+)
+@click.argument("model_in_path", type=Path)
+@click.argument("model_out_path", type=Path)
+def export_classifier(model_in_path: Path, model_out_path: Path):
+    c_train.export_jitted_classifier(model_in_path, model_out_path)
+
+
 @cli.group(help="run models on audio file")
 def run():
     pass
