@@ -158,7 +158,7 @@ def train_isolator(name: str, classifier_filepath: str):
     # Set up model and optimizations
     classifier = load_classifier(
         Path(classifier_filepath).parent, Path(classifier_filepath).name
-    )[0].to(DEVICE)
+    ).to(DEVICE)
     for param in classifier.parameters():
         param.requires_grad = False
     classifier.eval()
@@ -258,11 +258,10 @@ def train_isolator(name: str, classifier_filepath: str):
 
 def export_jitted_classifier(model_in_path: Path, model_out_path: Path):
     if model_in_path.is_dir():
-        model, classes = load_classifier(model_in_path)
+        model = load_classifier(model_in_path)
     else:
-        model, classes = load_classifier(
-            model_in_path.parent, model_in_path.name
-        )
+        model = load_classifier(model_in_path.parent, model_in_path.name)
+    targets = model.targets
 
     model = model.eval()
     model = torch.jit.trace_module(
@@ -274,7 +273,7 @@ def export_jitted_classifier(model_in_path: Path, model_out_path: Path):
     model = torch.jit.optimize_for_inference(model)
     model.save(
         str(model_out_path),
-        _extra_files={"targets.json", json.dumps(model.targets)},
+        _extra_files={"targets.json": json.dumps(targets)},
     )
     # To load:
     # extra_files = {"targets.json": ""}  # contents get replaced on load

@@ -29,9 +29,10 @@ def run_classifier(
 ):
     """Run classifier located at MODELPATH on AUDIOFILE"""
     if modelpath.is_dir():
-        model, classes = load_classifier(modelpath)
+        model = load_classifier(modelpath)
     else:
-        model, classes = load_classifier(modelpath.parent, modelpath.name)
+        model = load_classifier(modelpath.parent, modelpath.name)
+    classes = model.targets
     model.eval()
 
     x = torch.tensor(librosa.load(audiofile, sr=SAMPLE_RATE)[0])

@@ -57,7 +57,7 @@ class Classifier(nn.Module):
         self.dropout = nn.Dropout()
         self.relu = nn.ReLU(inplace=True)
 
-        channels = [16, 16, 16, 32, 32, 32, 64, 64, 64, 128, 128]
+        channels = [8, 16, 16, 32, 32, 32, 64, 64, 64, 128, 128]
         strides = [3, 3, 1, 3, 3, 1, 3, 3, 2, 2]
         dilations = [1, 2, 3, 1, 2, 3, 1, 2, 3, 3]
         assert len(strides) == len(channels) - 1 == len(dilations)
@@ -104,13 +104,8 @@ class Classifier(nn.Module):
 
         return self.maxer(logits)[:, :, 0], logits
 
-    def get_targets(self):
-        return self.targets
 
-
-def load_classifier(
-    folder: Path, filename: str = None
-) -> tuple[nn.Module, list[str]]:
+def load_classifier(folder: Path, filename: str = None) -> Classifier:
     """
     Load the classifier and the list of class labels
     """
@@ -121,9 +116,7 @@ def load_classifier(
         filename = max([f.name for f in folder.glob("*.pth")])
     state_dict = torch.load(folder / filename)
     classifier.load_state_dict(state_dict["model"])
-    with open(folder / "targets.json") as f:
-        classes = json.load(f)
-    return classifier, classes
+    return classifier
 
 
 π = 3.141592653589793
