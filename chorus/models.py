@@ -57,7 +57,7 @@ class Classifier(nn.Module):
         self.dropout = nn.Dropout()
         self.relu = nn.ReLU(inplace=True)
 
-        channels = [8, 8, 8, 16, 16, 16, 32, 32, 32, 64, 64]
+        channels = [16, 16, 16, 32, 32, 32, 64, 64, 64, 128, 128]
         strides = [3, 3, 1, 3, 3, 1, 3, 3, 2, 2]
         dilations = [1, 2, 3, 1, 2, 3, 1, 2, 3, 3]
         assert len(strides) == len(channels) - 1 == len(dilations)
