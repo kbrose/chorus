@@ -1,17 +1,17 @@
 # chorus
-Determine the bird from its call.
+Determine the bird from its song.
 
 ## Performance
 
-(Performance data as of commit [a2c8f1afa7](https://github.com/kbrose/chorus/commit/a2c8f1afa72e1e49528478c4067c093d4a981a80) using xeno canto data as of March 13th, 2021.)
+(Performance data as of commit [cecb3f933](https://github.com/kbrose/chorus/commit/cecb3f9331689e8c604236460efbf79a11501f6e) using xeno canto data as of February 20th, 2024.)
 
 The current model uses a resnet-style architecture on the raw audio waveform (sampled at 30,000 Hz).
 
-Across the 205 species with enough data, the model is able to pick out the correct species _exactly_ about 45% of the time. If given five attempts, the model can guess correctly about 75% of the time.
+Across the 264 species with enough data, the model is able to pick out the correct species _exactly_ about 45% of the time. If given five attempts, the model can guess correctly about 70% of the time.
 
 **NOTE:** This is on data that looks similar to the training data, specifically, most of the tested audio files were recorded with higher end equipment than your average smartphone.
 
-Including geographic information (using ebird's range maps) to filter out species that were not in that area provides slight improvements over the pure audio model.
+Adjusting the model's score by the odds that the species is present in that area during that time of the year (using ebird's range maps) provides a slight improvement.
 
 ![](./static/top-n.png)
 
@@ -21,39 +21,25 @@ _This figure shows where the model ranked the correct species (with ranks along 
 
 _This figure shows the ROC curves for all 205 species. It is useful to get a sense of overall performance in a one-vs-rest scenario._
 
-## Resources
+This performance is on audio recordings that are fairly long (a majority are over 30 seconds long) and often contain multiple species. If I could tell the model exactly what portion of each recording corresponds to each species, the model would likely learn better.
 
-* Audio Databases
-    * https://www.macaulaylibrary.org
-        * Tons of recordings, but requires signup/license agreement.
-    * https://avocet.integrativebiology.natsci.msu.edu
-        * All recordings seem to be licensed under "Creative Commons Attribution-Noncommercial-Share Alike 3.0 United States License".
-        * Files available in `.wav` format.
-        * Small recording counts for most species.
-    * https://www.xeno-canto.org
-        * Full rest API offered.
-        * Seems like most recordings are "only" MP3 files.
-        * Recordings typically (always?) licensed under with one of the CC licenses.
-        * Large number of recordings for most species.
-* Species range maps
-    * https://cornelllabofornithology.github.io/ebirdst/articles/ebirdst-introduction.html
-        * High quality range maps of 600 species, with a large overlap of xeno-canto species.
+Related work, such as the Cornell Lab of Ornithology's model, has [used human labelers to take exactly that approach](https://www.macaulaylibrary.org/2021/06/22/behind-the-scenes-of-sound-id-in-merlin/?doing_wp_cron=1625711942.0293428897857666015625). Their data is not open, unfortunately.
 
-After reviewing, it seems like xeno-canto is a clear winner in the short term. If the Macaulay Library is willing to share their data they might be a good follow up.
+## Data
 
-*Update:* After receiving the terms of use from Macaulay Library, it seems like they are too restrictive:
+Audio recordings from [Xeno Canto](https://www.xeno-canto.org) are used. Species range maps from [ebird](https://cornelllabofornithology.github.io/ebirdst/articles/ebirdst-introduction.html) are also used. The Xeno Canto data is really quite nice, all of it is CC-licensed, and their meta data has really good coverage for attributes like date and location of recording, the main species captured, other species in the recordings, and the type (song/call, adult/juvenile, etc.).
 
-> Macaulay Library media and data may not be reproduced, distributed, **or used to make products of any kind (whether commercial or noncommercial)** without prior written permission of the Cornell Lab of Ornithology.
-> ...
-> All Macaulay Library media assets are provided with additional supporting metadata sufficient to make sensible and informed decisions about data use.
+Macaulay Library and Avocet were considered as other audio sources, but Macaulay Library requires a licensing agreement including the stipulation that you cannot build a (non-commercial or commercial) "product" based on their data (product was left undefined and I assume can cover just about anything), and Avocet just doesn't have many recordings.
 
-(Emphasis mine.) I'll just stick with xeno-canto.
+It's also worth noting that the Cornell Lab of Ornithology (who runs the Macaulay Library) have hosted bird-audio-recognition competitions in the past and [_have used Xeno Canto's data instead of their own_](https://www.kaggle.com/c/birdclef-2021/data). In other words, all signs point to Xeno Canto being _the_ resource to use.
+
+See the section "Getting the data" below if you want to download it yourself.
 
 ## Developing
 
 ### Python dependencies
-
-This code requires python >= 3.9.
+g
+This code was tested on python v3.12.2.
 
 This project uses `pip-tools` to track requirements. It's recommended, but not required, to run the code.
 
@@ -82,27 +68,21 @@ sudo apt-get install gdal-bin libgdal-dev
 
 ### llvm
 
-You may not have a compatible version of `llvm` installed. I worked around this as follows:
-
-```bash
-sudo apt-get install "llvm-10*"  # latest compatible release
-# Use llvm 10 while installing packages
-LLVM_CONFIG=llvm-config-10 pip-sync dev-requirements.txt
-```
+LLVM may also need to be installed, if it is not already.
 
 ### Getting the data
 
-Use the command line interface. ***You'll need about 400 GB of free space and 48 hours.***
+Use the command line interface. ***You'll need about 600 GB of free space and a few days to download the data.***
 
 ```bash
 ######### For Audio
 # First get the meta data (about 200MB)
 python cli.py data xc-meta --help
 
-# Next download the audio (about 60GB, ~24 hours)
+# Next download the audio (about 80GB, ~24 hours)
 python cli.py data xc-audio --help
 
-# Finally, convert audio to numpy format (about 320GB, ~24 hours)
+# Finally, convert audio to numpy format (about 480GB, ~24 hours depending on your CPU)
 # This format takes up more space, but loads 800 times faster.
 python cli.py data xc-to-npy --help
 
@@ -117,4 +97,22 @@ python cli.py data range-map --help
 
 ######### For background (ambient) noise to augment (200MB)
 python cli.py data background
+```
+
+### Training the model
+
+```
+python cli.py train classifier <model name>
+```
+
+You can monitor progress with tensorboard:
+
+```
+tensorboard --logdir=./logs --samples_per_plugin images=150
+```
+
+### Running the model
+
+```
+python cli.py run classifier path/to/model/folder path/to/audio/file <optional location/date info>
 ```
