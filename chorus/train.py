@@ -271,6 +271,7 @@ def export_jitted_classifier(model_in_path: Path, model_out_path: Path):
         },
     )
     model = torch.jit.optimize_for_inference(model)
+    # TODO: Export english and scientific names
     model.save(
         str(model_out_path),
         _extra_files={"targets.json": json.dumps(targets)},
