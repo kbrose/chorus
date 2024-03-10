@@ -1,0 +1,20 @@
+<!doctype html>
+<title>Chorus – Birdsong identification</title>
+
+<body>
+    <ul>
+        {% for result in results %}
+        <li>
+            {{ result.date.isoformat() }}
+            <ul>
+                {% for bird in result.birds %}
+                <li>
+                    {{ bird.name }}: {{'%0.2f'| format(bird.score * 100|float)}}%
+                    (%)
+                </li>
+                {% endfor %}
+            </ul>
+        </li>
+        {% endfor %}
+    </ul>
+</body>
