@@ -43,7 +43,7 @@ black==24.2.0
     # via -r dev-requirements.in
 bleach==6.1.0
     # via nbconvert
-certifi==2024.2.2
+certifi==2024.7.4
     # via
     #   -r requirements.txt
     #   httpcore
